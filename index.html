@@ -331,6 +331,9 @@ h1,h2,h3{ margin:0; font-weight:700; }
             <button class="tool-btn" id="btn-undo">되돌리기</button>
             <button class="tool-btn" id="btn-clear">전부 지우기</button>
           </div>
+          <div class="tool-row">
+            <button class="tool-btn" id="btn-eyedropper" aria-pressed="false">💧 스포이드 (<span id="eyedropper-count">3</span>)</button>
+          </div>
         </div>
       </div>
       <div class="panel-actions">
@@ -483,6 +486,7 @@ const CONFIG = {
   SCALE_MIN: 0.10,
   SCALE_MAX: 0.20,
   PAINT_BG_CROP_RATIO: 1.6,  // 칠하기 화면 배경 크롭 크기 = 인형 크기 × 이 배율
+  EYEDROPPER_MAX_USES: 3,
   HIT_MARGIN: 1.15,
   HIT_MIN_RATIO: 0.03,
   TIME_LIMIT: 60,
@@ -544,6 +548,7 @@ const state = {
   color: CONFIG.DEFAULT_COLOR,
   brush: 12,
   eraser: false,
+  eyedropperUses: 0,        // 이번 스테이지에서 스포이드를 쓴 횟수 (최대 EYEDROPPER_MAX_USES)
   found: false,
   reveal: false,
   savedId: null,
@@ -836,6 +841,7 @@ function undo(){
 
 /* ---------- 색칠: 브러시 ---------- */
 let painting = false, lastPt = null;
+let eyedropperOn = false;
 /* dollView 화면(0~256) 좌표 — 배경은 무회전이라 이 좌표를 그대로 쓴다 */
 function viewPos(e){
   const r = dollView.getBoundingClientRect();
@@ -856,6 +862,35 @@ function dollPos(e){
   let ly = dx * sin + dy * cos;
   if (state.doll.flip) lx = -lx;
   return { x: lx + c, y: ly + c };
+}
+/* 스포이드 남은 횟수를 표시하고, 다 쓰면 버튼을 비활성화한다 */
+function updateEyedropperUI(){
+  const remaining = Math.max(0, CONFIG.EYEDROPPER_MAX_USES - state.eyedropperUses);
+  $('eyedropper-count').textContent = remaining;
+  $('btn-eyedropper').disabled = remaining <= 0;
+  if (remaining <= 0) eyedropperOn = false;
+  $('btn-eyedropper').setAttribute('aria-pressed', String(eyedropperOn));
+}
+/* 스포이드: 인형이 아니라 배경 크롭(bgCropCanvas)에서만 정확한 색을 추출한다.
+   쓸 때마다 카운트를 올리고 자동으로 꺼진다 (제작자 등급 페널티는 저장 시점에 별도로 적용). */
+function pickColorFromCrop(vx, vy, cssX, cssY){
+  const px = Math.min(CONFIG.DOLL_SIZE - 1, Math.max(0, Math.floor(vx)));
+  const py = Math.min(CONFIG.DOLL_SIZE - 1, Math.max(0, Math.floor(vy)));
+  const d = bgCropCtx.getImageData(px, py, 1, 1).data;
+  state.color = '#' + toHex(d[0]) + toHex(d[1]) + toHex(d[2]);
+  state.eraser = false;
+  $('btn-eraser').setAttribute('aria-pressed', 'false');
+  swatch.style.background = state.color;
+  $('color-picker').value = state.color;
+  state.eyedropperUses++;
+  eyedropperOn = false;
+  updateEyedropperUI();
+  const pop = document.createElement('div');
+  pop.className = 'color-pop';
+  pop.style.left = cssX + 'px'; pop.style.top = cssY + 'px';
+  pop.style.background = state.color;
+  dollView.parentElement.appendChild(pop);
+  setTimeout(() => pop.remove(), 650);
 }
 function strokeSetup(){
   paintCtx.save();
@@ -888,6 +923,11 @@ function endStroke(){
 dollView.addEventListener('pointerdown', (e) => {
   if (state.phase !== 'paint') return;
   e.preventDefault();
+  if (eyedropperOn){
+    const v = viewPos(e);
+    pickColorFromCrop(v.x, v.y, v.cssX, v.cssY);
+    return;
+  }
   dollView.setPointerCapture(e.pointerId);
   pushUndo();
   painting = true;
@@ -913,21 +953,6 @@ function stagePos(e){
            cssX: e.clientX - r.left, cssY: e.clientY - r.top };
 }
 function toHex(n){ return n.toString(16).padStart(2, '0'); }
-function pickColor(nx, ny, cssX, cssY){
-  const px = Math.min(state.photoW - 1, Math.max(0, Math.floor(nx * state.photoW)));
-  const py = Math.min(state.photoH - 1, Math.max(0, Math.floor(ny * state.photoH)));
-  const d = bufCtx.getImageData(px, py, 1, 1).data;
-  state.color = '#' + toHex(d[0]) + toHex(d[1]) + toHex(d[2]);
-  state.eraser = false;
-  $('btn-eraser').setAttribute('aria-pressed', 'false');
-  swatch.style.background = state.color;
-  const pop = document.createElement('div');
-  pop.className = 'color-pop';
-  pop.style.left = cssX + 'px'; pop.style.top = cssY + 'px';
-  pop.style.background = state.color;
-  overlay.appendChild(pop);
-  setTimeout(() => pop.remove(), 650);
-}
 
 /* ---------- 배치 드래그 ---------- */
 let dragging = false;
@@ -1049,9 +1074,7 @@ function hintFlash(){
 photoCanvas.addEventListener('pointerdown', (e) => {
   if (!state.photoW) return;
   const p = stagePos(e);
-  if (state.phase === 'paint'){
-    pickColor(p.nx, p.ny, p.cssX, p.cssY);
-  } else if (state.phase === 'place'){
+  if (state.phase === 'place'){
     if (nearDoll(p.nx, p.ny)){
       dragging = true;
       photoCanvas.setPointerCapture(e.pointerId);
@@ -1567,6 +1590,11 @@ $('btn-clear').addEventListener('click', () => {
   paintCtx.clearRect(0, 0, CONFIG.DOLL_SIZE, CONFIG.DOLL_SIZE);
   renderDollView(); renderStage();
 });
+$('btn-eyedropper').addEventListener('click', () => {
+  if ($('btn-eyedropper').disabled) return;
+  eyedropperOn = !eyedropperOn;
+  $('btn-eyedropper').setAttribute('aria-pressed', String(eyedropperOn));
+});
 
 /* ---------- 배치 컨트롤 배선 ---------- */
 $('sc-scale').addEventListener('input', (e) => {
@@ -1655,6 +1683,8 @@ function resetAll(){
   state.found = false;
   state.reveal = false;
   state.savedId = null;
+  state.eyedropperUses = 0;
+  eyedropperOn = false;
   playStage = null;
   remoteDollImg = null;
   playRun = null;
@@ -1664,6 +1694,7 @@ function resetAll(){
   $('sc-scale').value = 10; $('out-scale').textContent = '10%';
   $('sc-rot').value = 0;   $('out-rot').textContent = '0°';
   $('btn-flip').setAttribute('aria-pressed', 'false');
+  updateEyedropperUI();
   clearOverlay();
   renderDollView();
 }
