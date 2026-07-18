@@ -224,6 +224,7 @@ h1,h2,h3{ margin:0; font-weight:700; }
 #gauge-wrap{ height:10px; background:rgba(74,74,74,.15); border-radius:5px; overflow:hidden; margin:8px 0 2px; }
 #gauge{ height:100%; background:var(--accent); border-radius:5px; }
 .grade-msg{ text-align:center; font-size:17px; color:var(--pencil-soft); margin:2px 0 6px; }
+.eyedropper-badge{ text-align:center; font-size:15px; color:var(--pencil-soft); margin:0 0 6px; }
 
 /* ---------- 제작자 결과 보기 (Stage 3) ---------- */
 .stat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:8px 0; }
@@ -416,6 +417,7 @@ h1,h2,h3{ margin:0; font-weight:700; }
       </div>
       <div id="gauge-wrap" title="남은 시간"><div id="gauge" style="width:0%"></div></div>
       <p class="grade-msg" id="grade-msg"></p>
+      <p class="eyedropper-badge hidden" id="eyedropper-badge">🧪 스포이드 사용됨</p>
       <div class="panel-actions">
         <button class="btn" id="btn-share-card">결과 카드 공유</button>
         <button class="btn btn-primary" id="btn-play-make">나도 숨기기</button>
@@ -437,6 +439,7 @@ h1,h2,h3{ margin:0; font-weight:700; }
         <div class="stat-cell"><div class="v" id="rv-grade">?</div><div class="k">위장 등급</div></div>
       </div>
       <p class="grade-msg" id="rv-grade-msg"></p>
+      <p class="eyedropper-badge hidden" id="rv-eyedropper-badge">🧪 스포이드 사용됨</p>
       <div class="panel-actions">
         <button class="btn btn-ghost" id="btn-result-home">처음으로</button>
       </div>
@@ -1341,6 +1344,7 @@ function finishPlay(cleared){
   const grade = computeGrade(statsNow, tl, playStage.eyedropperUses);
   $('grade-letter').textContent = grade.g;
   $('grade-msg').textContent = grade.msg;
+  $('eyedropper-badge').classList.toggle('hidden', !(playStage.eyedropperUses > 0));
   playRun.grade = grade;
   setPhase('end');
   recordResult();
@@ -1437,6 +1441,13 @@ function buildShareCard(){
   ctx.textBaseline = 'middle';
   ctx.fillText(g.g, 0, 4);
   ctx.restore();
+  // 정직 배지 — 스포이드를 썼다면 표시
+  if (playStage.eyedropperUses > 0){
+    ctx.textBaseline = 'alphabetic';
+    ctx.font = '400 34px Gaegu, sans-serif';
+    ctx.fillStyle = '#9B958A';
+    ctx.fillText('🧪 스포이드 사용됨', 540, 968);
+  }
   // 푸터
   ctx.textBaseline = 'alphabetic';
   ctx.font = '400 30px Gaegu, sans-serif';
@@ -1486,6 +1497,7 @@ async function loadResultView(id){
     const grade = computeGrade(st, playStage.timeLimit, playStage.eyedropperUses);
     $('rv-grade').textContent = grade.g;
     $('rv-grade-msg').textContent = grade.msg;
+    $('rv-eyedropper-badge').classList.toggle('hidden', !(playStage.eyedropperUses > 0));
     setPhase('view');
   } catch(e){
     console.warn('결과 보기 실패:', e);
