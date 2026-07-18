@@ -647,9 +647,10 @@ function renderStage(){
   if (!state.photoW) return;
   pctx2d.clearRect(0, 0, state.photoW, state.photoH);
   pctx2d.drawImage(photoBuf, 0, 0);
-  // 인형 표시 조건: 배치 / (테스트 & 미발견) / (플레이 실패 공개) / 제작자 결과 보기
+  // 인형 표시 조건: 배치 / (테스트·실제 플레이 & 미발견) / (플레이 실패 공개) / 제작자 결과 보기
   const show = (state.phase === 'place')
             || (state.phase === 'test' && !state.found)
+            || (state.phase === 'play' && !state.found)
             || (state.phase === 'end' && state.reveal)
             || (state.phase === 'view');
   if (show){
