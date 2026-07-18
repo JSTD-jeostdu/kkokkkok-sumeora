@@ -487,6 +487,7 @@ const CONFIG = {
   SCALE_MAX: 0.20,
   PAINT_BG_CROP_RATIO: 1.6,  // 칠하기 화면 배경 크롭 크기 = 인형 크기 × 이 배율
   EYEDROPPER_MAX_USES: 3,
+  EYEDROPPER_GRADE_CAP: 'A',
   HIT_MARGIN: 1.15,
   HIT_MIN_RATIO: 0.03,
   TIME_LIMIT: 60,
@@ -1237,6 +1238,7 @@ async function loadStage(id){
       id, ref: got.ref, doll: got.data.doll,
       timeLimit: got.data.timeLimit || CONFIG.TIME_LIMIT,
       stats: got.data.stats || { plays: 0, clears: 0, totalClearMs: 0 },
+      eyedropperUses: got.data.eyedropperUses || 0,
     };
     startCountdown();
   } catch(e){
@@ -1284,15 +1286,22 @@ function startPlay(){
   }, 100);
 }
 /* 위장 등급 산정: 평균 발견 시간 / 제한 시간 비율 (clears 0이면 미개봉) */
-function computeGrade(stats, timeLimit){
+function computeGrade(stats, timeLimit, eyedropperUses){
   if (!stats || !stats.clears){
     return { g: '?', msg: '미개봉 위장 — 아직 아무도 못 찾았어요' };
   }
   const ratio = Math.min(1, (stats.totalClearMs / stats.clears) / (timeLimit * 1000));
+  let result = null;
   for (const gr of CONFIG.GRADES){
-    if (ratio >= gr.min) return { g: gr.g, msg: gr.msg };
+    if (ratio >= gr.min){ result = { g: gr.g, msg: gr.msg }; break; }
   }
-  return { g: 'D', msg: CONFIG.GRADES[CONFIG.GRADES.length - 1].msg };
+  if (!result) result = { g: 'D', msg: CONFIG.GRADES[CONFIG.GRADES.length - 1].msg };
+  // 스포이드를 한 번이라도 쓴 스테이지는 최고 등급을 한 단계 낮춘다 (완벽한 색 매칭 방지)
+  if (eyedropperUses > 0 && result.g === 'S'){
+    const capped = CONFIG.GRADES.find((gr) => gr.g === CONFIG.EYEDROPPER_GRADE_CAP);
+    if (capped) result = { g: capped.g, msg: capped.msg };
+  }
+  return result;
 }
 function finishPlay(cleared){
   if (!playRun || playRun.ended) return;
@@ -1329,7 +1338,7 @@ function finishPlay(cleared){
   $('result-hints').textContent = playRun.hints
     ? '사용한 힌트 ' + '★'.repeat(playRun.hints)
     : '힌트 없이 도전!';
-  const grade = computeGrade(statsNow, tl);
+  const grade = computeGrade(statsNow, tl, playStage.eyedropperUses);
   $('grade-letter').textContent = grade.g;
   $('grade-msg').textContent = grade.msg;
   playRun.grade = grade;
@@ -1468,13 +1477,13 @@ async function loadResultView(id){
     const got = await fetchStage(id);
     if (!got){ showError('링크가 틀렸거나, 만든 사람이 지웠을 수 있어요.'); return; }
     const d = got.data;
-    playStage = { id, ref: got.ref, doll: d.doll, timeLimit: d.timeLimit || CONFIG.TIME_LIMIT, stats: d.stats };
+    playStage = { id, ref: got.ref, doll: d.doll, timeLimit: d.timeLimit || CONFIG.TIME_LIMIT, stats: d.stats, eyedropperUses: d.eyedropperUses || 0 };
     resultTaps = d.taps || [];
     const st = d.stats || { plays: 0, clears: 0, totalClearMs: 0 };
     $('rv-plays').textContent = st.plays;
     $('rv-clears').textContent = st.clears;
     $('rv-avg').textContent = st.clears ? (st.totalClearMs / st.clears / 1000).toFixed(1) + '초' : '--';
-    const grade = computeGrade(st, playStage.timeLimit);
+    const grade = computeGrade(st, playStage.timeLimit, playStage.eyedropperUses);
     $('rv-grade').textContent = grade.g;
     $('rv-grade-msg').textContent = grade.msg;
     setPhase('view');
@@ -1503,7 +1512,7 @@ async function renderGallery(){
       const snap = await fb.db.collection('stages').doc(id).get();
       if (!snap.exists) continue;
       const d = snap.data();
-      const grade = computeGrade(d.stats, d.timeLimit || CONFIG.TIME_LIMIT);
+      const grade = computeGrade(d.stats, d.timeLimit || CONFIG.TIME_LIMIT, d.eyedropperUses);
       const card = document.createElement('button');
       card.className = 'g-card';
       card.setAttribute('aria-label', '예제 스테이지 플레이');
