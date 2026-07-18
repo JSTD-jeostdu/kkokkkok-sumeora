@@ -287,10 +287,30 @@ h1,h2,h3{ margin:0; font-weight:700; }
       <div id="countdown" class="hidden" aria-live="polite">3</div>
     </div>
 
-    <!-- 색칠 패널 -->
+    <!-- 배치 패널 (먼저 위치·크기·회전을 정한다) -->
+    <div id="place-panel" class="panel hidden">
+      <h3>인형을 몰래 숨겨두자 🤫</h3>
+      <p class="hint-line">인형을 <b>손가락으로 끌어서</b> 옮길 수 있어요</p>
+      <div class="slider-row">
+        <label for="sc-scale">크기</label>
+        <input type="range" id="sc-scale" min="10" max="20" step="0.5" value="10" aria-label="인형 크기">
+        <output id="out-scale">10%</output>
+      </div>
+      <div class="slider-row">
+        <label for="sc-rot">회전</label>
+        <input type="range" id="sc-rot" min="0" max="360" step="1" value="0" aria-label="인형 회전 각도">
+        <output id="out-rot">0°</output>
+      </div>
+      <div class="tool-row" style="margin-top:4px;">
+        <button class="tool-btn" id="btn-flip" aria-pressed="false">↔ 좌우반전</button>
+      </div>
+      <button class="btn btn-primary btn-wide" id="btn-to-paint">칠하러 가기</button>
+    </div>
+
+    <!-- 색칠 패널 (배치된 자리의 배경을 보며 칠한다) -->
     <div id="paint-panel" class="panel hidden">
       <h3>인형에게 위장색을 입히자 🎨</h3>
-      <p class="hint-line"><b>사진을 콕 누르면</b> 그 자리의 색을 훔쳐올 수 있어요 (스포이드)</p>
+      <p class="hint-line">붓으로 <b>감으로 색을 골라</b> 칠해보세요</p>
       <div class="paint-row">
         <canvas id="dollView" width="256" height="256" aria-label="종이인형 색칠 캔버스"></canvas>
         <div class="tools">
@@ -309,32 +329,12 @@ h1,h2,h3{ margin:0; font-weight:700; }
       </div>
       <div class="panel-actions">
         <button class="btn btn-ghost" id="btn-repick">사진 바꾸기</button>
-        <button class="btn btn-primary" id="btn-to-place">다 칠했어요, 숨기기!</button>
-      </div>
-    </div>
-
-    <!-- 배치 패널 -->
-    <div id="place-panel" class="panel hidden">
-      <h3>인형을 몰래 숨겨두자 🤫</h3>
-      <p class="hint-line">인형을 <b>손가락으로 끌어서</b> 옮길 수 있어요</p>
-      <div class="slider-row">
-        <label for="sc-scale">크기</label>
-        <input type="range" id="sc-scale" min="10" max="20" step="0.5" value="10" aria-label="인형 크기">
-        <output id="out-scale">10%</output>
-      </div>
-      <div class="slider-row">
-        <label for="sc-rot">회전</label>
-        <input type="range" id="sc-rot" min="0" max="360" step="1" value="0" aria-label="인형 회전 각도">
-        <output id="out-rot">0°</output>
-      </div>
-      <div class="tool-row" style="margin-top:4px;">
-        <button class="tool-btn" id="btn-flip" aria-pressed="false">↔ 좌우반전</button>
+        <button class="btn btn-ghost" id="btn-to-place">다시 배치</button>
       </div>
       <div class="panel-actions">
-        <button class="btn btn-ghost" id="btn-to-paint">다시 색칠</button>
         <button class="btn btn-ghost" id="btn-to-test">테스트 플레이</button>
+        <button class="btn btn-primary" id="btn-save">저장하고 공유하기</button>
       </div>
-      <button class="btn btn-primary btn-wide" id="btn-save">저장하고 공유하기</button>
     </div>
 
     <!-- 테스트 플레이 패널 -->
@@ -744,7 +744,7 @@ async function handleFile(file){
   state.photoW = w; state.photoH = h;
   photoCanvas.width = w; photoCanvas.height = h;
   state.photoB64 = null; // 새 사진 → base64 캐시 무효화
-  setPhase('paint');
+  setPhase('place');
 }
 /* 사진을 문서 예산(PHOTO_B64_MAX) 안에 들어오도록 적응형 압축해 dataURL로 인코딩.
    base64는 ASCII라 문자 수 ≈ Firestore 저장 바이트 수로 봐도 된다. */
