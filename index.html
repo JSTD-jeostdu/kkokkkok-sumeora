@@ -1052,11 +1052,14 @@ function saveMsg(text, spinning){
   $('save-spin').classList.toggle('hidden', !spinning);
 }
 async function saveStage(){
+  setPhase('save');
+  saveMsg('연결하는 중…', true);
+  await initFirebase();
   if (!fb.ready){
     alert('저장 기능을 사용할 수 없어요.\n(Firebase 설정이 비어 있거나 네트워크 문제) 제작과 테스트 플레이는 계속 할 수 있어요.');
+    setPhase('place');
     return;
   }
-  setPhase('save');
   $('btn-retry').classList.add('hidden');
   $('btn-save-back').classList.add('hidden');
   try {
@@ -1611,7 +1614,8 @@ async function boot(){
     else loadStage(sid);
   } else {
     setPhase('home');
-    renderGallery(); // 갤러리는 백그라운드 로드 (initFirebase 포함)
+    initFirebase();  // 저장 시점 지연 방지 위해 백그라운드로 미리 익명 인증 시작
+    renderGallery();
   }
 }
 boot();
