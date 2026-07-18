@@ -1,0 +1,1620 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>꼭꼭 숨어라 — 사진 속 종이인형 숨바꼭질</title>
+<!-- 폰트: Gaegu (손글씨 감성, CDN만 사용) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gaegu:wght@300;400;700&display=swap" rel="stylesheet">
+<!-- Firebase compat SDK (Stage 2) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<!-- Storage SDK 미사용: 2024-10부터 Storage는 Blaze 요금제 필수 → 사진·인형을 base64로 Firestore에 직접 저장 (진짜 무료 유지) -->
+<style>
+/* ==========================================================
+   꼭꼭 숨어라 — Stage 3 (최종)
+   디자인 토큰: 도화지 화이트 / 연필 그레이 / 포인트 레드 / Gaegu
+   시그니처: 가위로 오려낸 점선 테두리 + 팔랑거리는 종이인형
+   ========================================================== */
+:root{
+  --paper:#FAF7F0;
+  --pencil:#4A4A4A;
+  --pencil-soft:#9B958A;
+  --accent:#E45B5B;
+  --shadow:0 4px 14px rgba(74,74,74,.14);
+  --radius:14px;
+}
+*{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html,body{ margin:0; padding:0; }
+body{
+  font-family:'Gaegu', sans-serif;
+  background:var(--paper);
+  background-image:repeating-linear-gradient(0deg, rgba(74,74,74,.018) 0 1px, transparent 1px 7px);
+  color:var(--pencil);
+  min-height:100dvh;
+  display:flex; flex-direction:column;
+  font-size:19px; line-height:1.45;
+}
+/* 데스크톱에서도 모바일 폭 유지 (320px~1440px 대응) */
+main{ flex:1; width:100%; max-width:520px; margin:0 auto; padding:16px 14px 28px; }
+
+/* ---------- 공통 부품 ---------- */
+.hidden{ display:none !important; }
+h1,h2,h3{ margin:0; font-weight:700; }
+.btn{
+  font-family:inherit; font-size:21px; font-weight:700;
+  border:2.5px solid var(--pencil); border-radius:var(--radius);
+  background:#fff; color:var(--pencil);
+  padding:11px 20px; cursor:pointer; box-shadow:var(--shadow);
+  min-height:48px;
+  transition:transform .08s ease;
+}
+.btn:active{ transform:scale(.96) rotate(-.4deg); }
+.btn-primary{ background:var(--accent); border-color:var(--accent); color:#fff; }
+.btn-ghost{ background:transparent; box-shadow:none; border-style:dashed; }
+.btn:focus-visible{ outline:3px solid var(--accent); outline-offset:2px; }
+.btn-wide{ width:100%; margin-top:10px; }
+
+.cut-card{
+  background:#fff; border:2.5px dashed var(--pencil-soft);
+  border-radius:18px; box-shadow:var(--shadow);
+  padding:18px 16px; position:relative;
+}
+.cut-card::before{
+  content:'✂'; position:absolute; top:-14px; left:18px;
+  background:var(--paper); padding:0 6px; color:var(--pencil-soft); font-size:16px;
+}
+
+/* ---------- 푸터 (모든 화면 공통) ---------- */
+.site-footer{
+  text-align:center; padding:14px 0 18px;
+  font-size:14px; color:var(--pencil-soft); letter-spacing:.06em;
+}
+
+/* ---------- 홈 화면 ---------- */
+#screen-home{ display:flex; flex-direction:column; align-items:center; gap:20px; padding-top:26px; text-align:center; }
+.hero-doll{ width:120px; height:120px; filter:drop-shadow(0 6px 8px rgba(74,74,74,.18));
+  animation:sway 3.2s ease-in-out infinite; transform-origin:50% 8%; }
+@keyframes sway{ 0%,100%{ transform:rotate(-4deg); } 50%{ transform:rotate(4deg); } }
+.home-title{ font-size:46px; line-height:1.1; letter-spacing:.02em; }
+.home-title .dot{ color:var(--accent); }
+.home-tag{ font-size:20px; color:var(--pencil); margin:0; }
+
+/* 예제 갤러리 (Stage 3) */
+#gallery{ width:100%; text-align:left; }
+#gallery h3{ margin-bottom:10px; }
+#gallery-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.g-card{ border:2px solid var(--pencil-soft); border-radius:12px; overflow:hidden;
+  background:#fff; cursor:pointer; padding:0; font-family:inherit; text-align:left; }
+.g-thumb{ width:100%; height:86px; overflow:hidden; background:#e9e5dc; }
+.g-thumb img{ width:100%; height:100%; object-fit:cover; filter:blur(12px) saturate(1.1); transform:scale(1.15); }
+.g-meta{ display:flex; align-items:center; justify-content:space-between; padding:6px 10px; font-size:16px; }
+.g-grade{ font-weight:700; color:var(--accent); font-size:20px; }
+#gallery-loading{ text-align:center; color:var(--pencil-soft); font-size:16px; }
+
+/* ---------- 제작·플레이 화면 공통 ---------- */
+.topbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+.topbar .back{ font-size:18px; color:var(--pencil-soft); background:none; border:none; font-family:inherit; cursor:pointer; padding:10px 6px; }
+.phase-label{ font-size:18px; color:var(--accent); font-weight:700; }
+
+#upload-box{ display:flex; flex-direction:column; align-items:center; gap:14px; text-align:center; padding:40px 18px; }
+#upload-box .big{ font-size:44px; }
+
+#stage{ position:relative; width:100%; border-radius:16px; overflow:hidden;
+  box-shadow:var(--shadow); background:#e9e5dc; touch-action:none; }
+#photoCanvas{ display:block; width:100%; height:auto; max-height:62dvh; object-fit:contain; transition:filter .3s ease; }
+#photoCanvas.blurred{ filter:blur(16px); }
+#overlay{ position:absolute; inset:0; pointer-events:none; overflow:hidden; }
+
+#countdown{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  font-size:120px; font-weight:700; color:#fff; z-index:5; pointer-events:none;
+  text-shadow:0 4px 16px rgba(0,0,0,.45); }
+
+.ripple{ position:absolute; width:14px; height:14px; margin:-7px 0 0 -7px;
+  border:3px solid var(--accent); border-radius:50%; opacity:.9;
+  animation:rippleAnim .55s ease-out forwards; }
+@keyframes rippleAnim{ to{ transform:scale(5.5); opacity:0; } }
+
+.color-pop{ position:absolute; width:26px; height:26px; margin:-13px 0 0 -13px;
+  border-radius:50%; border:2.5px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,.25);
+  animation:popAnim .6s ease-out forwards; }
+@keyframes popAnim{ 0%{ transform:scale(.4); opacity:0; } 30%{ transform:scale(1.35); opacity:1; } 100%{ transform:scale(1) translateY(-18px); opacity:0; } }
+
+.found-doll{ position:absolute; pointer-events:none;
+  animation:foundPop .5s ease-out, paperFall 1.6s ease-in .5s forwards; }
+@keyframes foundPop{ 0%{ transform:scale(1); } 45%{ transform:scale(1.35) rotate(-6deg); } 100%{ transform:scale(1.15) rotate(4deg); } }
+@keyframes paperFall{
+  0%{ transform:scale(1.15) rotate(4deg); opacity:1; }
+  30%{ transform:translate(-14px,60px) rotate(-18deg) scale(1.1); }
+  60%{ transform:translate(12px,150px) rotate(14deg) scale(1.05); }
+  100%{ transform:translate(-6px,300px) rotate(-30deg) scale(1); opacity:0; } }
+
+.reveal-ring{ position:absolute; border:4px dashed var(--accent); border-radius:50%;
+  pointer-events:none; animation:revealPulse 1s ease-out 3; opacity:.15; }
+@keyframes revealPulse{ 0%{ transform:scale(.55); opacity:1; } 100%{ transform:scale(1.35); opacity:.1; } }
+
+/* 힌트 ①: 사분면 (Stage 3) */
+.quad-line-v{ position:absolute; top:0; bottom:0; left:50%; width:0; border-left:2px dashed rgba(255,255,255,.85); }
+.quad-line-h{ position:absolute; left:0; right:0; top:50%; height:0; border-top:2px dashed rgba(255,255,255,.85); }
+.quad-hl{ position:absolute; width:50%; height:50%; background:rgba(255,255,255,.28);
+  animation:quadFade 1.5s ease-out forwards; }
+@keyframes quadFade{ 0%{ opacity:0; } 15%{ opacity:1; } 80%{ opacity:1; } 100%{ opacity:0; } }
+
+/* ---------- 패널 ---------- */
+.panel{
+  margin-top:-30px; position:relative; z-index:2;
+  background:rgba(250,247,240,.93); backdrop-filter:blur(3px);
+  border:2.5px dashed var(--pencil-soft); border-radius:18px;
+  box-shadow:var(--shadow); padding:14px 12px 16px;
+}
+.panel.solo{ margin-top:0; }
+.panel h3{ font-size:20px; margin-bottom:8px; }
+.hint-line{ font-size:16px; color:var(--pencil-soft); margin:2px 0 10px; }
+.hint-line b{ color:var(--accent); }
+
+.paint-row{ display:flex; gap:12px; align-items:flex-start; }
+#dollView{ width:172px; height:172px; flex:0 0 auto; background:transparent;
+  filter:drop-shadow(0 4px 6px rgba(74,74,74,.22)); touch-action:none; }
+.tools{ display:flex; flex-direction:column; gap:8px; flex:1; min-width:0; }
+.tool-row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.tool-btn{
+  font-family:inherit; font-size:16px; font-weight:700;
+  border:2px solid var(--pencil); border-radius:10px; background:#fff; color:var(--pencil);
+  min-width:44px; min-height:44px; padding:4px 10px; cursor:pointer;
+}
+.tool-btn[aria-pressed="true"]{ background:var(--pencil); color:#fff; }
+.tool-btn:disabled{ opacity:.35; cursor:default; }
+.tool-btn:focus-visible{ outline:3px solid var(--accent); outline-offset:2px; }
+#swatch{ width:44px; height:44px; border-radius:50%; border:3px solid #fff;
+  box-shadow:0 0 0 2px var(--pencil), var(--shadow); flex:0 0 auto; }
+.brush-dot{ display:inline-block; border-radius:50%; background:currentColor; vertical-align:middle; }
+.panel-actions{ display:flex; gap:10px; margin-top:14px; }
+.panel-actions .btn{ flex:1; font-size:19px; }
+
+.slider-row{ display:flex; align-items:center; gap:10px; margin:8px 0; }
+.slider-row label{ width:56px; font-size:17px; flex:0 0 auto; }
+.slider-row input[type=range]{ flex:1; accent-color:var(--accent); height:32px; }
+.slider-row output{ width:52px; text-align:right; font-size:16px; color:var(--pencil-soft); }
+
+#test-status{ font-size:22px; text-align:center; margin:4px 0 10px; }
+#test-status.win{ color:var(--accent); }
+
+/* ---------- 저장/공유 ---------- */
+.spinner{ width:34px; height:34px; border:4px solid var(--pencil-soft); border-top-color:var(--accent);
+  border-radius:50%; margin:6px auto; animation:spin .8s linear infinite; }
+@keyframes spin{ to{ transform:rotate(360deg); } }
+#save-msg{ text-align:center; font-size:19px; margin:6px 0; }
+.url-row{ display:flex; gap:8px; align-items:stretch; }
+.url-row input{ flex:1; min-width:0; font-family:inherit; font-size:16px; color:var(--pencil);
+  border:2px solid var(--pencil-soft); border-radius:10px; padding:8px 10px; background:#fff; }
+.key-box{ text-align:center; font-size:30px; font-weight:700; letter-spacing:.25em;
+  background:#fff; border:2.5px dashed var(--accent); border-radius:12px; padding:8px 4px; margin:8px 0 4px;
+  user-select:all; }
+.warn-line{ font-size:15px; color:var(--accent); text-align:center; margin:0 0 6px; }
+.link-btn{ background:none; border:none; font-family:inherit; font-size:16px;
+  color:var(--pencil-soft); text-decoration:underline; cursor:pointer; padding:10px 6px; display:block; margin:6px auto 0; }
+
+/* ---------- 플레이 ---------- */
+#timerbar-wrap{ height:14px; background:rgba(74,74,74,.15); border-radius:7px; overflow:hidden; margin-bottom:10px; }
+#timerbar{ height:100%; width:100%; background:var(--pencil); border-radius:7px; transition:width .1s linear; }
+#timerbar.danger{ background:var(--accent); animation:barPulse .5s ease-in-out infinite; }
+@keyframes barPulse{ 50%{ opacity:.5; } }
+#play-status{ font-size:20px; text-align:center; margin:2px 0 8px; min-height:28px; }
+.hint-btn-row{ display:flex; gap:8px; justify-content:center; }
+.hint-btn{ flex:1; max-width:120px; }
+
+/* ---------- 결과 화면 (Stage 3) ---------- */
+#playend-title{ font-size:30px; text-align:center; margin:2px 0 4px; color:var(--accent); }
+#playend-sub{ text-align:center; margin-bottom:6px; }
+.result-box{ display:flex; align-items:center; justify-content:center; gap:16px; margin:8px 0; }
+.grade-badge{ width:74px; height:74px; border-radius:50%; background:#fff;
+  border:3px solid var(--accent); color:var(--accent); display:flex; flex-direction:column;
+  align-items:center; justify-content:center; flex:0 0 auto; box-shadow:var(--shadow);
+  transform:rotate(-4deg); }
+.grade-badge .g{ font-size:32px; font-weight:700; line-height:1; }
+.grade-badge .t{ font-size:11px; letter-spacing:.05em; }
+.result-lines{ text-align:left; font-size:18px; }
+.result-lines .big{ font-size:26px; font-weight:700; }
+#gauge-wrap{ height:10px; background:rgba(74,74,74,.15); border-radius:5px; overflow:hidden; margin:8px 0 2px; }
+#gauge{ height:100%; background:var(--accent); border-radius:5px; }
+.grade-msg{ text-align:center; font-size:17px; color:var(--pencil-soft); margin:2px 0 6px; }
+
+/* ---------- 제작자 결과 보기 (Stage 3) ---------- */
+.stat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:8px 0; }
+.stat-cell{ background:#fff; border:2px dashed var(--pencil-soft); border-radius:10px;
+  text-align:center; padding:8px 4px; }
+.stat-cell .v{ font-size:24px; font-weight:700; }
+.stat-cell .k{ font-size:14px; color:var(--pencil-soft); }
+
+#delete-panel input{ width:100%; font-family:inherit; font-size:22px; letter-spacing:.2em; text-align:center;
+  border:2.5px solid var(--pencil); border-radius:12px; padding:10px; background:#fff; text-transform:uppercase; }
+#delete-msg{ text-align:center; font-size:17px; min-height:24px; margin:8px 0 0; color:var(--accent); }
+
+@media (prefers-reduced-motion: reduce){
+  *{ animation-duration:.01ms !important; animation-iteration-count:1 !important; transition:none !important; }
+}
+</style>
+</head>
+<body>
+
+<main>
+  <!-- ================= 홈 화면 ================= -->
+  <section id="screen-home">
+    <svg class="hero-doll" viewBox="0 0 256 256" aria-hidden="true">
+      <g fill="#FFFFFF" stroke="#4A4A4A" stroke-width="5" stroke-linejoin="round">
+        <circle cx="128" cy="52" r="34"/>
+        <rect x="92"  y="82"  width="72" height="86" rx="30"/>
+        <rect x="58"  y="92"  width="26" height="62" rx="13"/>
+        <rect x="172" y="92"  width="26" height="62" rx="13"/>
+        <rect x="97"  y="158" width="27" height="74" rx="13"/>
+        <rect x="132" y="158" width="27" height="74" rx="13"/>
+      </g>
+    </svg>
+    <h1 class="home-title">꼭꼭 숨어라<span class="dot">.</span></h1>
+    <p class="home-tag">사진에서 색을 훔쳐 종이인형을 위장시키고,<br>친구가 그걸 찾아내는 숨바꼭질</p>
+    <button class="btn btn-primary" id="btn-start" style="font-size:24px; padding:13px 34px;">숨기러 가기</button>
+    <!-- 예제 갤러리: CONFIG.EXAMPLE_STAGES가 비어 있으면 통째로 숨겨짐 -->
+    <div id="gallery" class="cut-card hidden">
+      <h3>예제 스테이지 🎯</h3>
+      <p id="gallery-loading">불러오는 중…</p>
+      <div id="gallery-grid"></div>
+    </div>
+  </section>
+
+  <!-- ================= 제작·플레이 화면 ================= -->
+  <section id="screen-maker" class="hidden">
+    <div class="topbar">
+      <button class="back" id="btn-home">← 처음으로</button>
+      <span class="phase-label" id="phase-label">사진 고르기</span>
+    </div>
+
+    <!-- 사진 업로드 -->
+    <div id="upload-box" class="cut-card">
+      <div class="big">📷</div>
+      <h2 style="font-size:24px;">숨바꼭질할 사진을 골라주세요</h2>
+      <p class="hint-line" style="margin:0;">사진은 기기 안에서 자동으로 줄이고,<br>위치 정보(EXIF)는 깨끗이 지워져요.</p>
+      <button class="btn btn-primary" id="btn-pick">사진 고르기</button>
+      <input type="file" id="file-input" accept="image/*" hidden>
+    </div>
+
+    <!-- 사진 스테이지 -->
+    <div id="stage" class="hidden">
+      <canvas id="photoCanvas"></canvas>
+      <div id="overlay"></div>
+      <div id="countdown" class="hidden" aria-live="polite">3</div>
+    </div>
+
+    <!-- 색칠 패널 -->
+    <div id="paint-panel" class="panel hidden">
+      <h3>인형에게 위장색을 입히자 🎨</h3>
+      <p class="hint-line"><b>사진을 콕 누르면</b> 그 자리의 색을 훔쳐올 수 있어요 (스포이드)</p>
+      <div class="paint-row">
+        <canvas id="dollView" width="256" height="256" aria-label="종이인형 색칠 캔버스"></canvas>
+        <div class="tools">
+          <div class="tool-row">
+            <div id="swatch" title="지금 색" aria-label="현재 선택된 색"></div>
+            <button class="tool-btn brush-btn" data-size="24" aria-pressed="false" aria-label="큰 붓"><span class="brush-dot" style="width:16px;height:16px;"></span></button>
+            <button class="tool-btn brush-btn" data-size="12" aria-pressed="true"  aria-label="중간 붓"><span class="brush-dot" style="width:10px;height:10px;"></span></button>
+            <button class="tool-btn brush-btn" data-size="5"  aria-pressed="false" aria-label="작은 붓"><span class="brush-dot" style="width:5px;height:5px;"></span></button>
+          </div>
+          <div class="tool-row">
+            <button class="tool-btn" id="btn-eraser" aria-pressed="false">지우개</button>
+            <button class="tool-btn" id="btn-undo">되돌리기</button>
+            <button class="tool-btn" id="btn-clear">전부 지우기</button>
+          </div>
+        </div>
+      </div>
+      <div class="panel-actions">
+        <button class="btn btn-ghost" id="btn-repick">사진 바꾸기</button>
+        <button class="btn btn-primary" id="btn-to-place">다 칠했어요, 숨기기!</button>
+      </div>
+    </div>
+
+    <!-- 배치 패널 -->
+    <div id="place-panel" class="panel hidden">
+      <h3>인형을 몰래 숨겨두자 🤫</h3>
+      <p class="hint-line">인형을 <b>손가락으로 끌어서</b> 옮길 수 있어요</p>
+      <div class="slider-row">
+        <label for="sc-scale">크기</label>
+        <input type="range" id="sc-scale" min="4" max="20" step="0.5" value="10" aria-label="인형 크기">
+        <output id="out-scale">10%</output>
+      </div>
+      <div class="slider-row">
+        <label for="sc-rot">회전</label>
+        <input type="range" id="sc-rot" min="0" max="360" step="1" value="0" aria-label="인형 회전 각도">
+        <output id="out-rot">0°</output>
+      </div>
+      <div class="tool-row" style="margin-top:4px;">
+        <button class="tool-btn" id="btn-flip" aria-pressed="false">↔ 좌우반전</button>
+      </div>
+      <div class="panel-actions">
+        <button class="btn btn-ghost" id="btn-to-paint">다시 색칠</button>
+        <button class="btn btn-ghost" id="btn-to-test">테스트 플레이</button>
+      </div>
+      <button class="btn btn-primary btn-wide" id="btn-save">저장하고 공유하기</button>
+    </div>
+
+    <!-- 테스트 플레이 패널 -->
+    <div id="test-panel" class="panel hidden">
+      <p id="test-status">인형이 어디 숨었을까? 사진을 눌러 찾아보세요!</p>
+      <div class="panel-actions">
+        <button class="btn btn-primary" id="btn-back-edit" style="display:none;">다시 편집</button>
+        <button class="btn btn-ghost" id="btn-giveup">포기하고 돌아가기</button>
+      </div>
+    </div>
+
+    <!-- 저장 진행 패널 -->
+    <div id="save-panel" class="panel solo hidden">
+      <div class="spinner" id="save-spin"></div>
+      <p id="save-msg">저장을 준비하는 중…</p>
+      <button class="btn btn-primary btn-wide hidden" id="btn-retry">다시 시도</button>
+      <button class="btn btn-ghost btn-wide hidden" id="btn-save-back">돌아가기</button>
+    </div>
+
+    <!-- 공유 패널 -->
+    <div id="share-panel" class="panel solo hidden">
+      <h3>숨기기 완료! 🎉</h3>
+      <p class="hint-line">이 링크를 받은 친구가 인형 찾기에 도전해요</p>
+      <div class="url-row">
+        <input type="text" id="share-url" readonly aria-label="플레이 공유 링크">
+        <button class="btn" id="btn-copy" style="font-size:17px; padding:6px 14px;">복사</button>
+      </div>
+      <p class="hint-line" style="margin-top:14px;">제작자 전용 <b>결과 보기 링크</b> — 정답 위치와 히트맵이 보여요.<br>친구에게 보내지 말고 혼자 간직하세요!</p>
+      <div class="url-row">
+        <input type="text" id="result-url" readonly aria-label="제작자 결과 보기 링크">
+        <button class="btn" id="btn-copy-result" style="font-size:17px; padding:6px 14px;">복사</button>
+      </div>
+      <p class="hint-line" style="margin-top:14px;">스테이지를 지울 때 필요한 <b>삭제키</b></p>
+      <div class="key-box" id="delete-key">--------</div>
+      <p class="warn-line">링크 2개와 이 키는 다시 볼 수 없어요. 꼭 저장하세요!</p>
+      <button class="btn btn-primary btn-wide" id="btn-new-stage">새 스테이지 만들기</button>
+      <button class="link-btn" id="btn-open-delete-share">스테이지 삭제</button>
+    </div>
+
+    <!-- 플레이 로딩 패널 -->
+    <div id="load-panel" class="panel solo hidden">
+      <div class="spinner"></div>
+      <p id="load-msg" style="text-align:center;">스테이지를 불러오는 중…</p>
+    </div>
+
+    <!-- 플레이 패널 (힌트 3종 포함) -->
+    <div id="play-panel" class="panel hidden">
+      <div id="timerbar-wrap"><div id="timerbar"></div></div>
+      <p id="play-status" aria-live="polite">곧 시작해요…</p>
+      <div class="hint-btn-row">
+        <button class="tool-btn hint-btn" id="hint-quad" aria-label="힌트: 사분면 표시">🧭 어느 쪽?</button>
+        <button class="tool-btn hint-btn" id="hint-temp" aria-label="힌트: 뜨겁다 차갑다">🌡️ 온도계</button>
+        <button class="tool-btn hint-btn" id="hint-flash" aria-label="힌트: 인형 반짝">✨ 반짝</button>
+      </div>
+    </div>
+
+    <!-- 결과 화면 (Stage 3 정식) -->
+    <div id="playend-panel" class="panel hidden">
+      <p id="playend-title">결과</p>
+      <p id="playend-sub" class="hint-line"></p>
+      <div class="result-box">
+        <div class="grade-badge" aria-label="스테이지 위장 등급">
+          <span class="g" id="grade-letter">?</span>
+          <span class="t">위장 등급</span>
+        </div>
+        <div class="result-lines">
+          <div class="big" id="result-time">--</div>
+          <div id="result-hints">힌트 사용 없음</div>
+        </div>
+      </div>
+      <div id="gauge-wrap" title="남은 시간"><div id="gauge" style="width:0%"></div></div>
+      <p class="grade-msg" id="grade-msg"></p>
+      <div class="panel-actions">
+        <button class="btn" id="btn-share-card">결과 카드 공유</button>
+        <button class="btn btn-primary" id="btn-play-make">나도 숨기기</button>
+      </div>
+      <div class="panel-actions" style="margin-top:8px;">
+        <button class="btn btn-ghost" id="btn-play-home">홈으로</button>
+      </div>
+      <button class="link-btn" id="btn-open-delete-play">스테이지 삭제</button>
+    </div>
+
+    <!-- 제작자 결과 보기 (Stage 3) -->
+    <div id="result-panel" class="panel hidden">
+      <h3>제작자 결과 보기 🔍</h3>
+      <p class="hint-line">붉은 점은 도전자들이 누른 자리예요. 겹칠수록 진해져요.</p>
+      <div class="stat-grid">
+        <div class="stat-cell"><div class="v" id="rv-plays">0</div><div class="k">도전</div></div>
+        <div class="stat-cell"><div class="v" id="rv-clears">0</div><div class="k">발견</div></div>
+        <div class="stat-cell"><div class="v" id="rv-avg">--</div><div class="k">평균 발견 시간</div></div>
+        <div class="stat-cell"><div class="v" id="rv-grade">?</div><div class="k">위장 등급</div></div>
+      </div>
+      <p class="grade-msg" id="rv-grade-msg"></p>
+      <div class="panel-actions">
+        <button class="btn btn-ghost" id="btn-result-home">처음으로</button>
+      </div>
+      <button class="link-btn" id="btn-open-delete-result">스테이지 삭제</button>
+    </div>
+
+    <!-- 에러 패널 -->
+    <div id="error-panel" class="cut-card hidden" style="text-align:center;">
+      <div style="font-size:40px;">🫥</div>
+      <h2 style="font-size:24px; margin:8px 0;">이 스테이지는 사라졌어요</h2>
+      <p class="hint-line" id="error-msg">링크가 틀렸거나, 만든 사람이 지웠을 수 있어요.</p>
+      <button class="btn btn-primary" id="btn-error-home">처음으로</button>
+    </div>
+
+    <!-- 스테이지 삭제 패널 -->
+    <div id="delete-panel" class="panel solo hidden">
+      <h3>스테이지 삭제 🗑️</h3>
+      <p class="hint-line">저장할 때 받은 8자리 삭제키를 입력하세요</p>
+      <input type="text" id="delete-input" maxlength="8" autocomplete="off" aria-label="삭제키 입력">
+      <p id="delete-msg" aria-live="polite"></p>
+      <div class="panel-actions">
+        <button class="btn btn-ghost" id="btn-delete-cancel">취소</button>
+        <button class="btn btn-primary" id="btn-delete-confirm">삭제하기</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- 모든 화면 공통 푸터 -->
+<footer class="site-footer">made by JSTD</footer>
+
+<script>
+'use strict';
+/* ==========================================================
+   꼭꼭 숨어라 — Stage 3 스크립트 (최종)
+   S1: 업로드(리사이즈·EXIF 제거) → 색칠(스포이드) → 배치 → 테스트
+   S2: Firebase(익명 인증·업로드·?s= 로드·삭제키) + 정식 플레이 + 기록
+   S3: 힌트 3종 · 정식 결과(등급) · 공유 카드 · 제작자 히트맵 · 예제 갤러리
+   ========================================================== */
+
+/* ---------- 상수 ---------- */
+const CONFIG = {
+  PHOTO_MAX: 1280,
+  JPEG_QUALITY: 0.8,
+  DOLL_SIZE: 256,
+  UNDO_MAX: 10,
+  SCALE_MIN: 0.04,
+  SCALE_MAX: 0.20,
+  HIT_MARGIN: 1.15,
+  HIT_MIN_RATIO: 0.03,
+  TIME_LIMIT: 60,
+  TIMER_DANGER: 10,
+  TAPS_MAX: 500,
+  KEY_LEN: 8,
+  /* Firestore 문서 1MB 제한 예산 (Storage 미사용 — base64 직접 저장)
+     photo ≤ 700KB + doll ≤ 150KB + taps(~20KB) + 메타 → 최대 ~880KB로 안전 */
+  PHOTO_B64_MAX: 700000,
+  DOLL_B64_MAX: 150000,
+  // 적응형 압축 단계: 예산 초과 시 순서대로 시도 (해상도·품질을 점점 낮춤)
+  PHOTO_ENCODE_STEPS: [
+    { max: 1280, q: 0.8 }, { max: 1280, q: 0.65 },
+    { max: 1024, q: 0.7 }, { max: 1024, q: 0.55 },
+    { max: 900,  q: 0.5 },
+  ],
+  DEFAULT_COLOR: '#E45B5B',
+  OUTLINE_COLOR: 'rgba(74,74,74,.85)',
+  OUTLINE_WIDTH: 2.5,
+  HEAT_ALPHA: 0.22,          // 히트맵 점 하나의 투명도 (겹칠수록 진해짐)
+  HEAT_R_RATIO: 0.022,       // 히트맵 점 반경 (사진 짧은 변 대비)
+  FLASH_MS: 500,             // 힌트 ③ 반짝 지속 시간
+  // 힌트 ② 온도계: 정규화 거리(px/짧은변) 구간 → [문구, 진동 패턴]
+  TEMP_STEPS: [
+    { max: 0.10, msg: '앗 뜨거! 🔥', vib: [180] },
+    { max: 0.25, msg: '따뜻해요 🌤️', vib: [80] },
+    { max: 0.45, msg: '미지근… 😶', vib: [40] },
+    { max: 99,   msg: '차가워요 🧊', vib: [15] },
+  ],
+  // 위장 등급: 평균 발견 시간 / 제한 시간 비율 기준
+  GRADES: [
+    { min: 0.8, g: 'S', msg: '카멜레온도 울고 갈 위장!' },
+    { min: 0.6, g: 'A', msg: '매의 눈도 헤맸다' },
+    { min: 0.4, g: 'B', msg: '제법인데?' },
+    { min: 0.2, g: 'C', msg: '살짝 보였어' },
+    { min: -1,  g: 'D', msg: '숨은 그림 아니고 그냥 그림' },
+  ],
+  /* ▼ 예제 스테이지: 배포 후 직접 만든 스테이지의 ID를 넣으면 홈 갤러리에 표시됩니다.
+     예: EXAMPLE_STAGES: ['abc123', 'def456'] — 비어 있으면 갤러리 자체가 숨겨집니다. */
+  EXAMPLE_STAGES: [],
+  /* ▼▼▼ Firebase 콘솔 > 프로젝트 설정 > 웹 앱에서 받은 값을 여기에 붙여넣으세요 ▼▼▼
+     비어 있으면 저장/온라인 플레이만 꺼지고, 제작·테스트 플레이는 그대로 동작합니다. */
+  firebase: {
+    apiKey: 'AIzaSyDkISsOPeYXFCQLkOzX2B9N5wRfqTQfV3M',
+    authDomain: 'kkokkkok-sumeora.firebaseapp.com',
+    projectId: 'kkokkkok-sumeora',
+    storageBucket: 'kkokkkok-sumeora.firebasestorage.app',
+    messagingSenderId: '574184846351',
+    appId: '1:574184846351:web:6e069767fa6f8ba4005f7a',
+  },
+};
+
+/* ---------- 상태 ---------- */
+const state = {
+  phase: 'home', // home|upload|paint|place|test|save|share|load|ready|play|end|view|error|delete
+  photoW: 0, photoH: 0,
+  photoB64: null,           // 업로드용 사진 dataURL 캐시 (적응형 압축 결과)
+  doll: { x: 0.5, y: 0.5, scale: 0.10, rotation: 0, flip: false }, // 정규화 좌표(0~1)
+  color: CONFIG.DEFAULT_COLOR,
+  brush: 12,
+  eraser: false,
+  found: false,
+  reveal: false,
+  savedId: null,
+  deleteTargetId: null,
+  deleteReturnPhase: 'home',
+};
+
+let playStage = null;    // { id, ref, doll, timeLimit, stats }
+let remoteDollImg = null;
+let playRun = null;      // { start, taps, ended, cleared, clearMs, hints, tempOn }
+let resultTaps = null;   // 제작자 결과 보기용 탭 기록
+let timerIv = null, countdownIv = null;
+
+/* ---------- Firebase (익명 인증) ---------- */
+const fb = { db: null, uid: null, ready: false };
+let fbInitPromise = null;
+function initFirebase(){
+  if (fbInitPromise) return fbInitPromise;
+  fbInitPromise = (async () => {
+    if (!window.firebase || !CONFIG.firebase.apiKey) return false;
+    try {
+      firebase.initializeApp(CONFIG.firebase);
+      fb.db = firebase.firestore();
+      const cred = await firebase.auth().signInAnonymously();
+      fb.uid = cred.user.uid;
+      fb.ready = true;
+    } catch(e){
+      console.warn('Firebase 초기화 실패 — 오프라인 모드로 동작:', e);
+      fb.ready = false;
+    }
+    return fb.ready;
+  })();
+  return fbInitPromise;
+}
+
+/* ---------- 요소 참조 ---------- */
+const $ = (id) => document.getElementById(id);
+const screenHome = $('screen-home'), screenMaker = $('screen-maker');
+const uploadBox = $('upload-box'), stage = $('stage'), overlay = $('overlay');
+const photoCanvas = $('photoCanvas'), pctx2d = photoCanvas.getContext('2d');
+const paintPanel = $('paint-panel'), placePanel = $('place-panel'), testPanel = $('test-panel');
+const dollView = $('dollView'), viewCtx = dollView.getContext('2d');
+const swatch = $('swatch'), phaseLabel = $('phase-label'), testStatus = $('test-status');
+
+/* ---------- 오프스크린 캔버스 ---------- */
+const photoBuf = document.createElement('canvas');
+const bufCtx = photoBuf.getContext('2d', { willReadFrequently: true });
+const paintCanvas = document.createElement('canvas');
+paintCanvas.width = paintCanvas.height = CONFIG.DOLL_SIZE;
+const paintCtx = paintCanvas.getContext('2d', { willReadFrequently: true });
+const dollComposite = document.createElement('canvas');
+dollComposite.width = dollComposite.height = CONFIG.DOLL_SIZE;
+const compCtx = dollComposite.getContext('2d');
+
+/* ---------- 인형 실루엣 경로 ---------- */
+function addRoundRect(p, x, y, w, h, r){
+  r = Math.min(r, w/2, h/2);
+  p.moveTo(x+r, y);
+  p.lineTo(x+w-r, y); p.arcTo(x+w, y, x+w, y+r, r);
+  p.lineTo(x+w, y+h-r); p.arcTo(x+w, y+h, x+w-r, y+h, r);
+  p.lineTo(x+r, y+h); p.arcTo(x, y+h, x, y+h-r, r);
+  p.lineTo(x, y+r); p.arcTo(x, y, x+r, y, r);
+  p.closePath();
+}
+function buildDollPath(){
+  const p = new Path2D();
+  p.moveTo(128+34, 52); p.arc(128, 52, 34, 0, Math.PI*2);
+  addRoundRect(p,  92,  82, 72, 86, 30);
+  addRoundRect(p,  58,  92, 26, 62, 13);
+  addRoundRect(p, 172,  92, 26, 62, 13);
+  addRoundRect(p,  97, 158, 27, 74, 13);
+  addRoundRect(p, 132, 158, 27, 74, 13);
+  return p;
+}
+const dollPath = buildDollPath();
+
+/* ---------- 인형 렌더링 ---------- */
+function renderDollComposite(){
+  compCtx.clearRect(0, 0, CONFIG.DOLL_SIZE, CONFIG.DOLL_SIZE);
+  compCtx.save();
+  compCtx.fillStyle = '#FFFFFF';
+  compCtx.fill(dollPath);
+  compCtx.clip(dollPath);
+  compCtx.drawImage(paintCanvas, 0, 0);
+  compCtx.restore();
+  compCtx.lineWidth = CONFIG.OUTLINE_WIDTH;
+  compCtx.strokeStyle = CONFIG.OUTLINE_COLOR;
+  compCtx.lineJoin = 'round';
+  compCtx.stroke(dollPath);
+}
+function renderDollView(){
+  renderDollComposite();
+  viewCtx.clearRect(0, 0, CONFIG.DOLL_SIZE, CONFIG.DOLL_SIZE);
+  viewCtx.drawImage(dollComposite, 0, 0);
+}
+
+/* ---------- 활성 인형 ---------- */
+const PLAY_PHASES = ['ready', 'play', 'end', 'view'];
+function inPlay(){ return PLAY_PHASES.includes(state.phase) && playStage; }
+function activeDoll(){ return inPlay() ? playStage.doll : state.doll; }
+function activeDollSource(){ return (inPlay() && remoteDollImg) ? remoteDollImg : dollComposite; }
+
+/* ---------- 사진 스테이지 렌더링 ---------- */
+function minSide(){ return Math.min(state.photoW, state.photoH); }
+function dollSizePx(){ return activeDoll().scale * minSide(); }
+
+function renderStage(){
+  if (!state.photoW) return;
+  pctx2d.clearRect(0, 0, state.photoW, state.photoH);
+  pctx2d.drawImage(photoBuf, 0, 0);
+  // 인형 표시 조건: 배치 / (테스트 & 미발견) / (플레이 실패 공개) / 제작자 결과 보기
+  const show = (state.phase === 'place')
+            || (state.phase === 'test' && !state.found)
+            || (state.phase === 'end' && state.reveal)
+            || (state.phase === 'view');
+  if (show){
+    const d = activeDoll(), s = dollSizePx();
+    pctx2d.save();
+    pctx2d.translate(d.x * state.photoW, d.y * state.photoH);
+    pctx2d.rotate(d.rotation * Math.PI / 180);
+    if (d.flip) pctx2d.scale(-1, 1);
+    pctx2d.drawImage(activeDollSource(), -s/2, -s/2, s, s);
+    pctx2d.restore();
+  }
+  // 제작자 결과 보기: 탭 히트맵 (반투명 점, 겹칠수록 진해짐 — 라이브러리 없이 캔버스로)
+  if (state.phase === 'view' && resultTaps && resultTaps.length){
+    const r = minSide() * CONFIG.HEAT_R_RATIO;
+    pctx2d.save();
+    pctx2d.fillStyle = 'rgba(228,91,91,' + CONFIG.HEAT_ALPHA + ')';
+    for (const t of resultTaps){
+      pctx2d.beginPath();
+      pctx2d.arc(t.x * state.photoW, t.y * state.photoH, r, 0, Math.PI * 2);
+      pctx2d.fill();
+    }
+    pctx2d.restore();
+  }
+}
+
+/* ---------- 화면(페이즈) 전환 ---------- */
+const PHASE_LABELS = {
+  upload:'사진 고르기', paint:'위장 색칠', place:'숨길 곳 정하기', test:'테스트 플레이',
+  save:'저장 중', share:'공유하기', load:'불러오는 중', ready:'준비!', play:'찾아라!',
+  end:'결과', view:'결과 보기', error:'앗', 'delete':'스테이지 삭제',
+};
+function setPhase(phase){
+  state.phase = phase;
+  const isHome = phase === 'home';
+  screenHome.classList.toggle('hidden', !isHome);
+  screenMaker.classList.toggle('hidden', isHome);
+  const stageOn = ['paint','place','test','ready','play','end','view'].includes(phase);
+  stage.classList.toggle('hidden', !stageOn);
+  const panels = {
+    upload: uploadBox, paint: paintPanel, place: placePanel, test: testPanel,
+    save: $('save-panel'), share: $('share-panel'), load: $('load-panel'),
+    ready: $('play-panel'), play: $('play-panel'), end: $('playend-panel'),
+    view: $('result-panel'), error: $('error-panel'), 'delete': $('delete-panel'),
+  };
+  Object.values(panels).forEach((el) => el.classList.add('hidden'));
+  if (panels[phase]) panels[phase].classList.remove('hidden');
+  phaseLabel.textContent = PHASE_LABELS[phase] || '';
+  if (phase === 'test'){
+    state.found = false;
+    testStatus.textContent = '인형이 어디 숨었을까? 사진을 눌러 찾아보세요!';
+    testStatus.classList.remove('win');
+    $('btn-back-edit').style.display = 'none';
+    $('btn-giveup').style.display = '';
+    clearOverlay();
+  }
+  renderStage();
+}
+
+/* ---------- 사진 업로드 · 리사이즈 · EXIF 제거 ---------- */
+/* 최신 브라우저는 디코딩 시 EXIF orientation을 자동 보정한다.
+   imageOrientation:'from-image' 명시 + canvas 재인코딩으로 EXIF(GPS) 제거.
+   수동 EXIF 파싱은 이중 회전 버그를 만들므로 하지 않는다. */
+async function loadOrientedBitmap(file){
+  if ('createImageBitmap' in window){
+    try { return await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+    catch(e){ /* 폴백 */ }
+  }
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('이미지를 읽지 못했어요')); };
+    img.src = url;
+  });
+}
+function fitSize(w, h, max){
+  if (Math.max(w, h) <= max) return { w, h };
+  const k = max / Math.max(w, h);
+  return { w: Math.round(w * k), h: Math.round(h * k) };
+}
+async function handleFile(file){
+  if (!file || !file.type.startsWith('image/')){ alert('이미지 파일을 골라주세요.'); return; }
+  let bmp;
+  try { bmp = await loadOrientedBitmap(file); }
+  catch(e){ alert('사진을 불러오지 못했어요. 다른 사진으로 시도해 주세요.'); return; }
+  const src = { w: bmp.width || bmp.naturalWidth, h: bmp.height || bmp.naturalHeight };
+  const { w, h } = fitSize(src.w, src.h, CONFIG.PHOTO_MAX);
+  photoBuf.width = w; photoBuf.height = h;
+  bufCtx.drawImage(bmp, 0, 0, w, h);
+  if (bmp.close) bmp.close();
+  state.photoW = w; state.photoH = h;
+  photoCanvas.width = w; photoCanvas.height = h;
+  state.photoB64 = null; // 새 사진 → base64 캐시 무효화
+  setPhase('paint');
+}
+/* 사진을 문서 예산(PHOTO_B64_MAX) 안에 들어오도록 적응형 압축해 dataURL로 인코딩.
+   base64는 ASCII라 문자 수 ≈ Firestore 저장 바이트 수로 봐도 된다. */
+function encodePhotoB64(){
+  if (state.photoB64) return state.photoB64;
+  for (const s of CONFIG.PHOTO_ENCODE_STEPS){
+    let c = photoBuf;
+    if (Math.max(photoBuf.width, photoBuf.height) > s.max){
+      const { w, h } = fitSize(photoBuf.width, photoBuf.height, s.max);
+      c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      c.getContext('2d').drawImage(photoBuf, 0, 0, w, h);
+    }
+    const url = c.toDataURL('image/jpeg', s.q);
+    if (url.length <= CONFIG.PHOTO_B64_MAX){
+      state.photoB64 = url;
+      return url;
+    }
+  }
+  return null; // 모든 단계 실패 (극히 복잡한 사진)
+}
+/* 인형 PNG 인코딩 — 예산 초과 시 192px로 축소 재시도 (투명 배경 유지 위해 PNG 고정) */
+function encodeDollB64(){
+  renderDollComposite();
+  let url = dollComposite.toDataURL('image/png');
+  if (url.length <= CONFIG.DOLL_B64_MAX) return url;
+  const c = document.createElement('canvas');
+  c.width = c.height = 192;
+  c.getContext('2d').drawImage(dollComposite, 0, 0, 192, 192);
+  url = c.toDataURL('image/png');
+  return url.length <= CONFIG.DOLL_B64_MAX ? url : null;
+}
+
+/* ---------- 색칠: 실행취소 ---------- */
+const undoStack = [];
+function pushUndo(){
+  if (undoStack.length >= CONFIG.UNDO_MAX) undoStack.shift();
+  undoStack.push(paintCtx.getImageData(0, 0, CONFIG.DOLL_SIZE, CONFIG.DOLL_SIZE));
+}
+function undo(){
+  const snap = undoStack.pop();
+  if (!snap) return;
+  paintCtx.putImageData(snap, 0, 0);
+  renderDollView(); renderStage();
+}
+
+/* ---------- 색칠: 브러시 ---------- */
+let painting = false, lastPt = null;
+function dollPos(e){
+  const r = dollView.getBoundingClientRect();
+  return { x: (e.clientX - r.left) / r.width * CONFIG.DOLL_SIZE,
+           y: (e.clientY - r.top) / r.height * CONFIG.DOLL_SIZE };
+}
+function strokeSetup(){
+  paintCtx.save();
+  paintCtx.clip(dollPath);
+  paintCtx.lineCap = 'round';
+  paintCtx.lineJoin = 'round';
+  paintCtx.lineWidth = state.brush;
+  paintCtx.strokeStyle = state.color;
+  paintCtx.fillStyle = state.color;
+  paintCtx.globalCompositeOperation = state.eraser ? 'destination-out' : 'source-over';
+}
+function strokeDot(pt){
+  paintCtx.beginPath();
+  paintCtx.arc(pt.x, pt.y, state.brush / 2, 0, Math.PI * 2);
+  paintCtx.fill();
+}
+function strokeSegment(a, b){
+  paintCtx.beginPath();
+  paintCtx.moveTo(a.x, a.y);
+  paintCtx.lineTo(b.x, b.y);
+  paintCtx.stroke();
+}
+function endStroke(){
+  if (!painting) return;
+  painting = false; lastPt = null;
+  try { paintCtx.restore(); } catch(e){}
+  paintCtx.globalCompositeOperation = 'source-over';
+  renderDollView(); renderStage();
+}
+dollView.addEventListener('pointerdown', (e) => {
+  if (state.phase !== 'paint') return;
+  e.preventDefault();
+  dollView.setPointerCapture(e.pointerId);
+  pushUndo();
+  painting = true;
+  strokeSetup();
+  lastPt = dollPos(e);
+  strokeDot(lastPt);
+  renderDollView();
+});
+dollView.addEventListener('pointermove', (e) => {
+  if (!painting) return;
+  const pt = dollPos(e);
+  strokeSegment(lastPt, pt);
+  lastPt = pt;
+  renderDollView();
+});
+dollView.addEventListener('pointerup', endStroke);
+dollView.addEventListener('pointercancel', endStroke);
+
+/* ---------- 스포이드 ---------- */
+function stagePos(e){
+  const r = photoCanvas.getBoundingClientRect();
+  return { nx: (e.clientX - r.left) / r.width, ny: (e.clientY - r.top) / r.height,
+           cssX: e.clientX - r.left, cssY: e.clientY - r.top };
+}
+function toHex(n){ return n.toString(16).padStart(2, '0'); }
+function pickColor(nx, ny, cssX, cssY){
+  const px = Math.min(state.photoW - 1, Math.max(0, Math.floor(nx * state.photoW)));
+  const py = Math.min(state.photoH - 1, Math.max(0, Math.floor(ny * state.photoH)));
+  const d = bufCtx.getImageData(px, py, 1, 1).data;
+  state.color = '#' + toHex(d[0]) + toHex(d[1]) + toHex(d[2]);
+  state.eraser = false;
+  $('btn-eraser').setAttribute('aria-pressed', 'false');
+  swatch.style.background = state.color;
+  const pop = document.createElement('div');
+  pop.className = 'color-pop';
+  pop.style.left = cssX + 'px'; pop.style.top = cssY + 'px';
+  pop.style.background = state.color;
+  overlay.appendChild(pop);
+  setTimeout(() => pop.remove(), 650);
+}
+
+/* ---------- 배치 드래그 ---------- */
+let dragging = false;
+function nearDoll(nx, ny){
+  const dx = (nx - state.doll.x) * state.photoW;
+  const dy = (ny - state.doll.y) * state.photoH;
+  const grabR = Math.max(dollSizePx() * 0.9, minSide() * 0.09);
+  return Math.hypot(dx, dy) <= grabR;
+}
+
+/* ---------- 판정·연출 ---------- */
+function hitTest(nx, ny){
+  const d = activeDoll();
+  const dx = (nx - d.x) * state.photoW;
+  const dy = (ny - d.y) * state.photoH;
+  const r = Math.max(dollSizePx() * 0.5 * CONFIG.HIT_MARGIN, minSide() * CONFIG.HIT_MIN_RATIO);
+  return Math.hypot(dx, dy) <= r;
+}
+function clearOverlay(){ overlay.innerHTML = ''; }
+function cssScale(){
+  const r = photoCanvas.getBoundingClientRect();
+  return { kx: r.width / state.photoW, ky: r.height / state.photoH };
+}
+function spawnRipple(cssX, cssY){
+  const el = document.createElement('div');
+  el.className = 'ripple';
+  el.style.left = cssX + 'px'; el.style.top = cssY + 'px';
+  overlay.appendChild(el);
+  setTimeout(() => el.remove(), 600);
+}
+function spawnFoundDoll(){
+  const d = activeDoll();
+  const { kx, ky } = cssScale();
+  const sizeCss = dollSizePx() * kx;
+  const src = activeDollSource();
+  const img = document.createElement('img');
+  img.className = 'found-doll';
+  img.src = (src instanceof HTMLImageElement) ? src.src : src.toDataURL();
+  img.alt = '찾아낸 종이인형';
+  img.style.width = sizeCss + 'px';
+  img.style.height = sizeCss + 'px';
+  img.style.left = (d.x * state.photoW * kx - sizeCss / 2) + 'px';
+  img.style.top  = (d.y * state.photoH * ky - sizeCss / 2) + 'px';
+  overlay.appendChild(img);
+}
+function spawnRevealRing(){
+  const d = activeDoll();
+  const { kx, ky } = cssScale();
+  const sizeCss = Math.max(dollSizePx() * kx * 1.6, 56);
+  const ring = document.createElement('div');
+  ring.className = 'reveal-ring';
+  ring.style.width = sizeCss + 'px';
+  ring.style.height = sizeCss + 'px';
+  ring.style.left = (d.x * state.photoW * kx - sizeCss / 2) + 'px';
+  ring.style.top  = (d.y * state.photoH * ky - sizeCss / 2) + 'px';
+  overlay.appendChild(ring);
+}
+
+/* ==========================================================
+   Stage 3 — 힌트 3종 (각 1회, 개인 기록 전용 — stats에 저장하지 않음)
+   ========================================================== */
+function useHint(btn){
+  if (!playRun || playRun.ended) return false;
+  if (btn.disabled) return false;
+  btn.disabled = true;
+  playRun.hints++;
+  return true;
+}
+// 힌트 ① 사분면: 점선 십자 + 인형이 있는 사분면을 1.5초 밝게
+function hintQuadrant(){
+  if (!useHint($('hint-quad'))) return;
+  const d = activeDoll();
+  const v = document.createElement('div'); v.className = 'quad-line-v';
+  const h = document.createElement('div'); h.className = 'quad-line-h';
+  const hl = document.createElement('div'); hl.className = 'quad-hl';
+  hl.style.left = (d.x < 0.5 ? '0' : '50%');
+  hl.style.top  = (d.y < 0.5 ? '0' : '50%');
+  overlay.appendChild(v); overlay.appendChild(h); overlay.appendChild(hl);
+  setTimeout(() => { v.remove(); h.remove(); hl.remove(); }, 1500);
+}
+// 힌트 ② 온도계: 이후 매 탭마다 거리 피드백 (색이 아닌 텍스트+진동 — 색약 접근성)
+function hintTemp(){
+  if (!useHint($('hint-temp'))) return;
+  playRun.tempOn = true;
+  $('play-status').textContent = '온도계 켜짐! 이제 누를 때마다 온도를 알려줘요';
+}
+function tempFeedback(nx, ny){
+  const d = activeDoll();
+  const dist = Math.hypot((nx - d.x) * state.photoW, (ny - d.y) * state.photoH) / minSide();
+  for (const step of CONFIG.TEMP_STEPS){
+    if (dist <= step.max){
+      $('play-status').textContent = step.msg;
+      if (navigator.vibrate) navigator.vibrate(step.vib);
+      return;
+    }
+  }
+}
+// 힌트 ③ 반짝: 인형 아웃라인이 0.5초 반짝 (실루엣 경로를 그대로 재사용)
+function hintFlash(){
+  if (!useHint($('hint-flash'))) return;
+  const d = activeDoll();
+  const s = dollSizePx();
+  const k = s / CONFIG.DOLL_SIZE;
+  pctx2d.save();
+  pctx2d.translate(d.x * state.photoW, d.y * state.photoH);
+  pctx2d.rotate(d.rotation * Math.PI / 180);
+  if (d.flip) pctx2d.scale(-1, 1);
+  pctx2d.scale(k, k);
+  pctx2d.translate(-CONFIG.DOLL_SIZE / 2, -CONFIG.DOLL_SIZE / 2);
+  pctx2d.lineWidth = 7 / k;
+  pctx2d.strokeStyle = '#E45B5B';
+  pctx2d.lineJoin = 'round';
+  pctx2d.stroke(dollPath);
+  pctx2d.restore();
+  setTimeout(renderStage, CONFIG.FLASH_MS);
+}
+
+/* ---------- 사진 스테이지 입력 ---------- */
+photoCanvas.addEventListener('pointerdown', (e) => {
+  if (!state.photoW) return;
+  const p = stagePos(e);
+  if (state.phase === 'paint'){
+    pickColor(p.nx, p.ny, p.cssX, p.cssY);
+  } else if (state.phase === 'place'){
+    if (nearDoll(p.nx, p.ny)){
+      dragging = true;
+      photoCanvas.setPointerCapture(e.pointerId);
+    }
+  } else if (state.phase === 'test'){
+    if (state.found) return;
+    if (hitTest(p.nx, p.ny)){
+      state.found = true;
+      renderStage();
+      spawnFoundDoll();
+      testStatus.textContent = '찾았다! 🎉 위장이 뚫렸네요';
+      testStatus.classList.add('win');
+      $('btn-back-edit').style.display = '';
+      $('btn-giveup').style.display = 'none';
+      if (navigator.vibrate) navigator.vibrate(80);
+    } else {
+      spawnRipple(p.cssX, p.cssY);
+    }
+  } else if (state.phase === 'play'){
+    if (!playRun || playRun.ended) return;
+    playRun.taps.push({ x: Math.round(p.nx * 1000) / 1000, y: Math.round(p.ny * 1000) / 1000 });
+    if (hitTest(p.nx, p.ny)){
+      finishPlay(true);
+    } else {
+      spawnRipple(p.cssX, p.cssY);
+      if (playRun.tempOn) tempFeedback(p.nx, p.ny);
+    }
+  }
+});
+photoCanvas.addEventListener('pointermove', (e) => {
+  if (!dragging || state.phase !== 'place') return;
+  const p = stagePos(e);
+  state.doll.x = Math.min(0.98, Math.max(0.02, p.nx));
+  state.doll.y = Math.min(0.98, Math.max(0.02, p.ny));
+  renderStage();
+});
+function endDrag(){ dragging = false; }
+photoCanvas.addEventListener('pointerup', endDrag);
+photoCanvas.addEventListener('pointercancel', endDrag);
+
+/* ==========================================================
+   Stage 2 — 저장하고 공유
+   ========================================================== */
+const KEY_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+function genDeleteKey(){
+  const arr = new Uint32Array(CONFIG.KEY_LEN);
+  crypto.getRandomValues(arr);
+  let s = '';
+  for (const v of arr) s += KEY_CHARS[v % KEY_CHARS.length];
+  return s;
+}
+async function sha256Hex(str){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+function saveMsg(text, spinning){
+  $('save-msg').textContent = text;
+  $('save-spin').classList.toggle('hidden', !spinning);
+}
+async function saveStage(){
+  if (!fb.ready){
+    alert('저장 기능을 사용할 수 없어요.\n(Firebase 설정이 비어 있거나 네트워크 문제) 제작과 테스트 플레이는 계속 할 수 있어요.');
+    return;
+  }
+  setPhase('save');
+  $('btn-retry').classList.add('hidden');
+  $('btn-save-back').classList.add('hidden');
+  try {
+    saveMsg('사진을 꾹꾹 눌러 담는 중…', true);
+    const photoB64 = encodePhotoB64();
+    if (!photoB64) throw new Error('사진이 너무 복잡해서 담지 못했어요. 다른 사진으로 시도해 주세요.');
+    const dollB64 = encodeDollB64();
+    if (!dollB64) throw new Error('인형 인코딩에 실패했어요.');
+
+    const ref = fb.db.collection('stages').doc();
+    const id = ref.id;
+
+    saveMsg('스테이지를 기록하는 중…', true);
+    const deleteKey = genDeleteKey();
+    const deleteKeyHash = await sha256Hex(deleteKey);
+    await ref.set({
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      creatorUid: fb.uid,
+      photoB64, dollB64,   // Storage 미사용: 문서에 직접 저장
+      doll: { ...state.doll },
+      timeLimit: CONFIG.TIME_LIMIT,
+      deleteKeyHash,
+      stats: { plays: 0, clears: 0, totalClearMs: 0 },
+      taps: [],
+    });
+
+    state.savedId = id;
+    const base = location.origin + location.pathname + '?s=' + id;
+    $('share-url').value = base;
+    $('result-url').value = base + '&view=result';
+    $('delete-key').textContent = deleteKey;
+    setPhase('share');
+  } catch(e){
+    console.warn('저장 실패:', e);
+    saveMsg((e && e.message && e.message.includes('요')) ? e.message : '저장에 실패했어요. 네트워크를 확인해 주세요.', false);
+    $('btn-retry').classList.remove('hidden');
+    $('btn-save-back').classList.remove('hidden');
+  }
+}
+async function copyText(inputId, btnId){
+  const input = $(inputId);
+  const btn = $(btnId);
+  try {
+    await navigator.clipboard.writeText(input.value);
+    btn.textContent = '복사됨!';
+  } catch(e){
+    input.focus(); input.select();
+    try { document.execCommand('copy'); btn.textContent = '복사됨!'; }
+    catch(e2){ alert('길게 눌러 직접 복사해 주세요.'); }
+  }
+  setTimeout(() => { btn.textContent = '복사'; }, 1500);
+}
+
+/* ==========================================================
+   Stage 2 — ?s= 로드 & 정식 플레이 / Stage 3 — 등급·결과
+   ========================================================== */
+function loadImg(src){
+  return new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error('이미지 로드 실패'));
+    im.src = src; // base64 dataURL — CORS·캔버스 오염 문제 없음
+  });
+}
+function showError(msg){
+  $('error-msg').textContent = msg;
+  setPhase('error');
+}
+// 스테이지 문서 + 이미지 로드 (플레이·결과 보기 공용)
+async function fetchStage(id){
+  const ref = fb.db.collection('stages').doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) return null;
+  const d = snap.data();
+  const [photoImg, dollImg] = await Promise.all([loadImg(d.photoB64), loadImg(d.dollB64)]);
+  remoteDollImg = dollImg;
+  const { w, h } = fitSize(photoImg.naturalWidth, photoImg.naturalHeight, CONFIG.PHOTO_MAX);
+  photoBuf.width = w; photoBuf.height = h;
+  bufCtx.drawImage(photoImg, 0, 0, w, h);
+  state.photoW = w; state.photoH = h;
+  photoCanvas.width = w; photoCanvas.height = h;
+  return { ref, data: d };
+}
+async function loadStage(id){
+  setPhase('load');
+  if (!fb.ready){ showError('연결에 실패해 스테이지를 열 수 없어요. 잠시 후 다시 시도해 주세요.'); return; }
+  try {
+    const got = await fetchStage(id);
+    if (!got){ showError('링크가 틀렸거나, 만든 사람이 지웠을 수 있어요.'); return; }
+    playStage = {
+      id, ref: got.ref, doll: got.data.doll,
+      timeLimit: got.data.timeLimit || CONFIG.TIME_LIMIT,
+      stats: got.data.stats || { plays: 0, clears: 0, totalClearMs: 0 },
+    };
+    startCountdown();
+  } catch(e){
+    console.warn('스테이지 로드 실패:', e);
+    showError('불러오기에 실패했어요. 네트워크를 확인해 주세요.');
+  }
+}
+function startCountdown(){
+  setPhase('ready');
+  state.found = false; state.reveal = false;
+  clearOverlay();
+  photoCanvas.classList.add('blurred');
+  ['hint-quad', 'hint-temp', 'hint-flash'].forEach((id) => { $(id).disabled = false; });
+  const cd = $('countdown');
+  let n = 3;
+  cd.textContent = n;
+  cd.classList.remove('hidden');
+  $('play-status').textContent = '곧 시작해요… 인형을 찾을 준비!';
+  countdownIv = setInterval(() => {
+    n--;
+    if (n <= 0){
+      clearInterval(countdownIv); countdownIv = null;
+      cd.classList.add('hidden');
+      photoCanvas.classList.remove('blurred');
+      startPlay();
+    } else {
+      cd.textContent = n;
+    }
+  }, 800);
+}
+function startPlay(){
+  setPhase('play');
+  playRun = { start: performance.now(), taps: [], ended: false, cleared: false, clearMs: 0, hints: 0, tempOn: false };
+  $('play-status').textContent = '인형을 찾아 사진을 콕! 눌러보세요';
+  const tl = playStage.timeLimit;
+  const bar = $('timerbar');
+  bar.style.width = '100%';
+  bar.classList.remove('danger');
+  timerIv = setInterval(() => {
+    const elapsed = (performance.now() - playRun.start) / 1000;
+    const remain = Math.max(0, tl - elapsed);
+    bar.style.width = (remain / tl * 100) + '%';
+    bar.classList.toggle('danger', remain <= CONFIG.TIMER_DANGER);
+    if (remain <= 0) finishPlay(false);
+  }, 100);
+}
+/* 위장 등급 산정: 평균 발견 시간 / 제한 시간 비율 (clears 0이면 미개봉) */
+function computeGrade(stats, timeLimit){
+  if (!stats || !stats.clears){
+    return { g: '?', msg: '미개봉 위장 — 아직 아무도 못 찾았어요' };
+  }
+  const ratio = Math.min(1, (stats.totalClearMs / stats.clears) / (timeLimit * 1000));
+  for (const gr of CONFIG.GRADES){
+    if (ratio >= gr.min) return { g: gr.g, msg: gr.msg };
+  }
+  return { g: 'D', msg: CONFIG.GRADES[CONFIG.GRADES.length - 1].msg };
+}
+function finishPlay(cleared){
+  if (!playRun || playRun.ended) return;
+  playRun.ended = true;
+  playRun.cleared = cleared;
+  clearInterval(timerIv); timerIv = null;
+  const tl = playStage.timeLimit;
+  // 이번 플레이를 반영한 스테이지 stats (등급 표시용 — 서버 기록과 동일 계산)
+  const statsNow = {
+    plays: playStage.stats.plays + 1,
+    clears: playStage.stats.clears + (cleared ? 1 : 0),
+    totalClearMs: playStage.stats.totalClearMs + (cleared ? Math.round(performance.now() - playRun.start) : 0),
+  };
+  if (cleared){
+    playRun.clearMs = Math.round(performance.now() - playRun.start);
+    state.found = true;
+    renderStage();
+    spawnFoundDoll();
+    if (navigator.vibrate) navigator.vibrate([60, 40, 120]);
+    $('playend-title').textContent = '찾았다! 🎉';
+    $('playend-sub').textContent = '';
+    $('result-time').textContent = (playRun.clearMs / 1000).toFixed(1) + '초 만에 발견!';
+    const remainRatio = Math.max(0, 1 - playRun.clearMs / (tl * 1000));
+    $('gauge').style.width = (remainRatio * 100) + '%';
+  } else {
+    state.reveal = true;
+    renderStage();
+    spawnRevealRing();
+    $('playend-title').textContent = '시간 종료! ⏰';
+    $('playend-sub').textContent = '인형은 반짝이는 곳에 숨어 있었어요. 다음엔 찾을 수 있어!';
+    $('result-time').textContent = '찾지 못했다…';
+    $('gauge').style.width = '0%';
+  }
+  $('result-hints').textContent = playRun.hints
+    ? '사용한 힌트 ' + '★'.repeat(playRun.hints)
+    : '힌트 없이 도전!';
+  const grade = computeGrade(statsNow, tl);
+  $('grade-letter').textContent = grade.g;
+  $('grade-msg').textContent = grade.msg;
+  playRun.grade = grade;
+  setPhase('end');
+  recordResult();
+}
+/* 플레이 기록 — 단일 트랜잭션 원자 기록. stats는 increment()만 사용. */
+async function recordResult(){
+  if (!fb.ready || !playStage || !playStage.ref || !playRun) return;
+  const inc = firebase.firestore.FieldValue.increment;
+  const run = playRun;
+  try {
+    await fb.db.runTransaction(async (t) => {
+      const snap = await t.get(playStage.ref);
+      if (!snap.exists) return;
+      const prevTaps = snap.data().taps || [];
+      const taps = prevTaps.concat(run.taps).slice(-CONFIG.TAPS_MAX);
+      const upd = { taps: taps, 'stats.plays': inc(1) };
+      if (run.cleared){
+        upd['stats.clears'] = inc(1);
+        upd['stats.totalClearMs'] = inc(run.clearMs);
+      }
+      t.update(playStage.ref, upd);
+    });
+  } catch(e){
+    console.warn('플레이 기록 저장 실패(게임 진행에는 지장 없음):', e);
+  }
+}
+
+/* ==========================================================
+   Stage 3 — 결과 카드 공유 (사진·인형 위치 미포함: 스포일러/프라이버시 방지)
+   ========================================================== */
+function buildShareCard(){
+  const c = document.createElement('canvas');
+  c.width = c.height = 1080;
+  const ctx = c.getContext('2d');
+  // 도화지 배경 + 옅은 가로 결
+  ctx.fillStyle = '#FAF7F0';
+  ctx.fillRect(0, 0, 1080, 1080);
+  ctx.fillStyle = 'rgba(74,74,74,.035)';
+  for (let y = 0; y < 1080; y += 14) ctx.fillRect(0, y, 1080, 2);
+  // 가위 점선 테두리
+  ctx.strokeStyle = '#9B958A';
+  ctx.lineWidth = 5;
+  ctx.setLineDash([18, 14]);
+  ctx.strokeRect(40, 40, 1000, 1000);
+  ctx.setLineDash([]);
+  // 타이틀
+  ctx.fillStyle = '#4A4A4A';
+  ctx.textAlign = 'center';
+  ctx.font = '700 84px Gaegu, sans-serif';
+  ctx.fillText('꼭꼭 숨어라', 540, 160);
+  ctx.fillStyle = '#E45B5B';
+  ctx.fillText('.', 540 + ctx.measureText('꼭꼭 숨어라').width / 2 + 14, 160);
+  // 종이인형 실루엣 (흰색 — 위장색을 카드에 노출하면 힌트가 되므로 넣지 않는다)
+  ctx.save();
+  ctx.translate(540, 470);
+  ctx.rotate(-0.07);
+  ctx.scale(1.35, 1.35);
+  ctx.translate(-128, -128);
+  ctx.shadowColor = 'rgba(74,74,74,.25)';
+  ctx.shadowBlur = 18;
+  ctx.shadowOffsetY = 8;
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fill(dollPath);
+  ctx.shadowColor = 'transparent';
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = '#4A4A4A';
+  ctx.lineJoin = 'round';
+  ctx.stroke(dollPath);
+  ctx.restore();
+  // 결과 문구
+  ctx.fillStyle = '#4A4A4A';
+  ctx.font = '700 64px Gaegu, sans-serif';
+  const line1 = playRun.cleared
+    ? (playRun.clearMs / 1000).toFixed(1) + '초 만에 발견!'
+    : '찾지 못했다…';
+  ctx.fillText(line1, 540, 740);
+  ctx.font = '400 44px Gaegu, sans-serif';
+  ctx.fillStyle = '#9B958A';
+  ctx.fillText(playRun.hints ? '힌트 ' + '★'.repeat(playRun.hints) : '힌트 없이 도전!', 540, 800);
+  // 등급 뱃지
+  const g = playRun.grade || { g: '?' };
+  ctx.save();
+  ctx.translate(540, 905);
+  ctx.rotate(-0.06);
+  ctx.beginPath();
+  ctx.arc(0, 0, 62, 0, Math.PI * 2);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fill();
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = '#E45B5B';
+  ctx.stroke();
+  ctx.fillStyle = '#E45B5B';
+  ctx.font = '700 58px Gaegu, sans-serif';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(g.g, 0, 4);
+  ctx.restore();
+  // 푸터
+  ctx.textBaseline = 'alphabetic';
+  ctx.font = '400 30px Gaegu, sans-serif';
+  ctx.fillStyle = '#9B958A';
+  ctx.fillText('made by JSTD', 540, 1015);
+  return c;
+}
+async function shareCard(){
+  if (!playRun) return;
+  const c = buildShareCard();
+  const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
+  if (blob && navigator.canShare){
+    const file = new File([blob], 'kkokkkok-result.png', { type: 'image/png' });
+    if (navigator.canShare({ files: [file] })){
+      try {
+        await navigator.share({ files: [file], title: '꼭꼭 숨어라' });
+        return;
+      } catch(e){
+        if (e && e.name === 'AbortError') return; // 사용자가 공유 시트를 닫음
+      }
+    }
+  }
+  // 공유 미지원: PNG 다운로드 폴백
+  const a = document.createElement('a');
+  a.href = c.toDataURL('image/png');
+  a.download = 'kkokkkok-result.png';
+  a.click();
+}
+
+/* ==========================================================
+   Stage 3 — 제작자 결과 보기 (?s={id}&view=result)
+   ========================================================== */
+async function loadResultView(id){
+  setPhase('load');
+  $('load-msg').textContent = '결과를 불러오는 중…';
+  if (!fb.ready){ showError('연결에 실패해 결과를 열 수 없어요.'); return; }
+  try {
+    const got = await fetchStage(id);
+    if (!got){ showError('링크가 틀렸거나, 만든 사람이 지웠을 수 있어요.'); return; }
+    const d = got.data;
+    playStage = { id, ref: got.ref, doll: d.doll, timeLimit: d.timeLimit || CONFIG.TIME_LIMIT, stats: d.stats };
+    resultTaps = d.taps || [];
+    const st = d.stats || { plays: 0, clears: 0, totalClearMs: 0 };
+    $('rv-plays').textContent = st.plays;
+    $('rv-clears').textContent = st.clears;
+    $('rv-avg').textContent = st.clears ? (st.totalClearMs / st.clears / 1000).toFixed(1) + '초' : '--';
+    const grade = computeGrade(st, playStage.timeLimit);
+    $('rv-grade').textContent = grade.g;
+    $('rv-grade-msg').textContent = grade.msg;
+    setPhase('view');
+  } catch(e){
+    console.warn('결과 보기 실패:', e);
+    showError('불러오기에 실패했어요. 네트워크를 확인해 주세요.');
+  }
+}
+
+/* ==========================================================
+   Stage 3 — 홈 예제 갤러리 (CONFIG.EXAMPLE_STAGES 기반)
+   ========================================================== */
+async function renderGallery(){
+  const ids = CONFIG.EXAMPLE_STAGES;
+  if (!ids || !ids.length) return;         // 비어 있으면 갤러리 숨김 유지
+  await initFirebase();
+  if (!fb.ready) return;
+  $('gallery').classList.remove('hidden');
+  $('gallery-loading').classList.remove('hidden'); // 재진입 시 로딩 문구 복원
+  const grid = $('gallery-grid');
+  grid.innerHTML = '';
+  let loaded = 0;
+  // 카드 단위 지연 로드: 하나 실패해도 나머지는 표시
+  for (const id of ids){
+    try {
+      const snap = await fb.db.collection('stages').doc(id).get();
+      if (!snap.exists) continue;
+      const d = snap.data();
+      const grade = computeGrade(d.stats, d.timeLimit || CONFIG.TIME_LIMIT);
+      const card = document.createElement('button');
+      card.className = 'g-card';
+      card.setAttribute('aria-label', '예제 스테이지 플레이');
+      // 썸네일은 강한 블러 처리 — 정답 위치·사진 내용 노출 방지
+      card.innerHTML =
+        '<div class="g-thumb"><img alt="" loading="lazy"></div>' +
+        '<div class="g-meta"><span>도전 ' + (d.stats ? d.stats.plays : 0) + '</span>' +
+        '<span class="g-grade">' + grade.g + '</span></div>';
+      card.querySelector('img').src = d.photoB64;
+      card.addEventListener('click', () => {
+        // 새 URL로 이동해 플레이 (라우팅 로직 재사용, 뒤로 가기도 자연스럽다)
+        location.href = location.pathname + '?s=' + id;
+      });
+      grid.appendChild(card);
+      loaded++;
+    } catch(e){
+      console.warn('예제 스테이지 로드 실패:', id, e);
+    }
+  }
+  $('gallery-loading').classList.add('hidden');
+  if (!loaded) $('gallery').classList.add('hidden');
+}
+
+/* ==========================================================
+   Stage 2 — 스테이지 삭제
+   ========================================================== */
+function openDelete(targetId, returnPhase){
+  if (!targetId){ alert('삭제할 스테이지를 찾지 못했어요.'); return; }
+  state.deleteTargetId = targetId;
+  state.deleteReturnPhase = returnPhase;
+  $('delete-input').value = '';
+  $('delete-msg').textContent = '';
+  setPhase('delete');
+}
+async function confirmDelete(){
+  const key = $('delete-input').value.trim().toUpperCase();
+  if (key.length !== CONFIG.KEY_LEN){
+    $('delete-msg').textContent = '삭제키는 ' + CONFIG.KEY_LEN + '자리예요.';
+    return;
+  }
+  if (!fb.ready){ $('delete-msg').textContent = '지금은 연결할 수 없어요.'; return; }
+  $('delete-msg').textContent = '확인하는 중…';
+  try {
+    const ref = fb.db.collection('stages').doc(state.deleteTargetId);
+    const snap = await ref.get();
+    if (!snap.exists){ $('delete-msg').textContent = '이미 삭제된 스테이지예요.'; return; }
+    const d = snap.data();
+    const hash = await sha256Hex(key);
+    if (hash !== d.deleteKeyHash){
+      $('delete-msg').textContent = '키가 맞지 않아요.';
+      return;
+    }
+    await ref.delete(); // 사진·인형이 문서 안에 있으므로 문서 삭제 한 번으로 전부 제거
+    alert('스테이지가 삭제되었어요.');
+    goHomeClean();
+  } catch(e){
+    console.warn('삭제 실패:', e);
+    $('delete-msg').textContent = '삭제에 실패했어요. 다시 시도해 주세요.';
+  }
+}
+
+/* ---------- 도구 버튼 배선 ---------- */
+document.querySelectorAll('.brush-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    state.brush = Number(btn.dataset.size);
+    state.eraser = false;
+    $('btn-eraser').setAttribute('aria-pressed', 'false');
+    document.querySelectorAll('.brush-btn').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+  });
+});
+$('btn-eraser').addEventListener('click', () => {
+  state.eraser = !state.eraser;
+  $('btn-eraser').setAttribute('aria-pressed', String(state.eraser));
+});
+$('btn-undo').addEventListener('click', undo);
+$('btn-clear').addEventListener('click', () => {
+  if (!confirm('칠한 색을 전부 지울까요?')) return;
+  pushUndo();
+  paintCtx.clearRect(0, 0, CONFIG.DOLL_SIZE, CONFIG.DOLL_SIZE);
+  renderDollView(); renderStage();
+});
+
+/* ---------- 배치 컨트롤 배선 ---------- */
+$('sc-scale').addEventListener('input', (e) => {
+  state.doll.scale = Number(e.target.value) / 100;
+  $('out-scale').textContent = e.target.value + '%';
+  renderStage();
+});
+$('sc-rot').addEventListener('input', (e) => {
+  state.doll.rotation = Number(e.target.value);
+  $('out-rot').textContent = e.target.value + '°';
+  renderStage();
+});
+$('btn-flip').addEventListener('click', () => {
+  state.doll.flip = !state.doll.flip;
+  $('btn-flip').setAttribute('aria-pressed', String(state.doll.flip));
+  renderStage();
+});
+
+/* ---------- 화면 이동 배선 ---------- */
+function stopTimers(){
+  if (timerIv){ clearInterval(timerIv); timerIv = null; }
+  if (countdownIv){ clearInterval(countdownIv); countdownIv = null; }
+  $('countdown').classList.add('hidden');
+  photoCanvas.classList.remove('blurred');
+}
+function cleanUrl(){
+  if (location.search) history.replaceState(null, '', location.pathname);
+}
+function goHomeClean(){
+  stopTimers();
+  cleanUrl();
+  resetAll();
+  setPhase('home');
+  renderGallery();
+}
+$('btn-start').addEventListener('click', () => setPhase('upload'));
+$('btn-home').addEventListener('click', () => {
+  const working = state.photoW && !['share', 'end', 'view', 'error'].includes(state.phase);
+  if (working && !confirm('처음으로 돌아가면 지금 작업이 사라져요. 괜찮나요?')) return;
+  goHomeClean();
+});
+$('btn-pick').addEventListener('click', () => $('file-input').click());
+$('file-input').addEventListener('change', (e) => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (f) handleFile(f);
+});
+$('btn-repick').addEventListener('click', () => $('file-input').click());
+$('btn-to-place').addEventListener('click', () => setPhase('place'));
+$('btn-to-paint').addEventListener('click', () => setPhase('paint'));
+$('btn-to-test').addEventListener('click', () => setPhase('test'));
+$('btn-back-edit').addEventListener('click', () => { clearOverlay(); setPhase('place'); });
+$('btn-giveup').addEventListener('click', () => { clearOverlay(); setPhase('place'); });
+$('btn-save').addEventListener('click', saveStage);
+$('btn-retry').addEventListener('click', saveStage);
+$('btn-save-back').addEventListener('click', () => setPhase('place'));
+$('btn-copy').addEventListener('click', () => copyText('share-url', 'btn-copy'));
+$('btn-copy-result').addEventListener('click', () => copyText('result-url', 'btn-copy-result'));
+$('btn-new-stage').addEventListener('click', () => {
+  if (!confirm('새 스테이지를 만들까요? (지금 링크와 삭제키는 다시 볼 수 없어요)')) return;
+  stopTimers(); cleanUrl(); resetAll();
+  setPhase('upload');
+});
+$('btn-open-delete-share').addEventListener('click', () => openDelete(state.savedId, 'share'));
+$('btn-open-delete-play').addEventListener('click', () => openDelete(playStage && playStage.id, 'end'));
+$('btn-open-delete-result').addEventListener('click', () => openDelete(playStage && playStage.id, 'view'));
+$('btn-delete-cancel').addEventListener('click', () => setPhase(state.deleteReturnPhase || 'home'));
+$('btn-delete-confirm').addEventListener('click', confirmDelete);
+$('btn-play-make').addEventListener('click', () => {
+  stopTimers(); cleanUrl(); resetAll();
+  setPhase('upload');
+});
+$('btn-play-home').addEventListener('click', goHomeClean);
+$('btn-result-home').addEventListener('click', goHomeClean);
+$('btn-error-home').addEventListener('click', goHomeClean);
+$('btn-share-card').addEventListener('click', shareCard);
+$('hint-quad').addEventListener('click', hintQuadrant);
+$('hint-temp').addEventListener('click', hintTemp);
+$('hint-flash').addEventListener('click', hintFlash);
+
+/* ---------- 초기화 ---------- */
+function resetAll(){
+  state.photoW = state.photoH = 0;
+  state.photoB64 = null;
+  state.doll = { x: 0.5, y: 0.5, scale: 0.10, rotation: 0, flip: false };
+  state.found = false;
+  state.reveal = false;
+  state.savedId = null;
+  playStage = null;
+  remoteDollImg = null;
+  playRun = null;
+  resultTaps = null;
+  undoStack.length = 0;
+  paintCtx.clearRect(0, 0, CONFIG.DOLL_SIZE, CONFIG.DOLL_SIZE);
+  $('sc-scale').value = 10; $('out-scale').textContent = '10%';
+  $('sc-rot').value = 0;   $('out-rot').textContent = '0°';
+  $('btn-flip').setAttribute('aria-pressed', 'false');
+  clearOverlay();
+  renderDollView();
+}
+async function boot(){
+  swatch.style.background = state.color;
+  renderDollView();
+  const params = new URLSearchParams(location.search);
+  const sid = params.get('s');
+  if (sid){
+    setPhase('load');
+    await initFirebase();
+    // ?s={id}&view=result → 제작자 결과 보기 / 그 외 → 플레이
+    if (params.get('view') === 'result') loadResultView(sid);
+    else loadStage(sid);
+  } else {
+    setPhase('home');
+    renderGallery(); // 갤러리는 백그라운드 로드 (initFirebase 포함)
+  }
+}
+boot();
+</script>
+</body>
+</html>
