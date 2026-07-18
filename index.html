@@ -156,7 +156,8 @@ h1,h2,h3{ margin:0; font-weight:700; }
 .hint-line b{ color:var(--accent); }
 
 .paint-row{ display:flex; gap:12px; align-items:flex-start; }
-#dollView{ width:172px; height:172px; flex:0 0 auto; background:transparent;
+.doll-view-wrap{ position:relative; flex:0 0 auto; width:172px; height:172px; }
+#dollView{ width:100%; height:100%; display:block; background:transparent;
   filter:drop-shadow(0 4px 6px rgba(74,74,74,.22)); touch-action:none; }
 .tools{ display:flex; flex-direction:column; gap:8px; flex:1; min-width:0; }
 .tool-row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
@@ -312,7 +313,9 @@ h1,h2,h3{ margin:0; font-weight:700; }
       <h3>인형에게 위장색을 입히자 🎨</h3>
       <p class="hint-line">붓으로 <b>감으로 색을 골라</b> 칠해보세요</p>
       <div class="paint-row">
-        <canvas id="dollView" width="256" height="256" aria-label="종이인형 색칠 캔버스"></canvas>
+        <div class="doll-view-wrap">
+          <canvas id="dollView" width="256" height="256" aria-label="종이인형 색칠 캔버스"></canvas>
+        </div>
         <div class="tools">
           <div class="tool-row">
             <div id="swatch" title="지금 색" aria-label="현재 선택된 색"></div>
@@ -476,6 +479,7 @@ const CONFIG = {
   UNDO_MAX: 10,
   SCALE_MIN: 0.10,
   SCALE_MAX: 0.20,
+  PAINT_BG_CROP_RATIO: 1.6,  // 칠하기 화면 배경 크롭 크기 = 인형 크기 × 이 배율
   HIT_MARGIN: 1.15,
   HIT_MIN_RATIO: 0.03,
   TIME_LIMIT: 60,
@@ -590,6 +594,14 @@ const paintCtx = paintCanvas.getContext('2d', { willReadFrequently: true });
 const dollComposite = document.createElement('canvas');
 dollComposite.width = dollComposite.height = CONFIG.DOLL_SIZE;
 const compCtx = dollComposite.getContext('2d');
+// 칠하기 화면에서 인형 뒤에 보여줄 배경 크롭 (정적 스냅샷 — 저장되지 않음, 화면 표시 전용)
+const bgCropCanvas = document.createElement('canvas');
+bgCropCanvas.width = bgCropCanvas.height = CONFIG.DOLL_SIZE;
+const bgCropCtx = bgCropCanvas.getContext('2d', { willReadFrequently: true });
+bgCropCtx.fillStyle = '#FAF7F0';
+bgCropCtx.fillRect(0, 0, CONFIG.DOLL_SIZE, CONFIG.DOLL_SIZE);
+// 칠하기 화면에서 인형은 크롭 배율의 역수만큼 작게 그려 주변 배경이 보이도록 한다
+const DOLL_VIEW_SCALE = 1 / CONFIG.PAINT_BG_CROP_RATIO;
 
 /* ---------- 인형 실루엣 경로 ---------- */
 function addRoundRect(p, x, y, w, h, r){
@@ -627,10 +639,34 @@ function renderDollComposite(){
   compCtx.lineJoin = 'round';
   compCtx.stroke(dollPath);
 }
+/* 배치된 자리를 기준으로 사진을 크롭해 칠하기 화면 배경으로 캡처 (정적 스냅샷).
+   drawImage는 소스 사각형이 캔버스 경계를 벗어나면 자동으로 잘라내므로 별도 clamp가 필요 없다 —
+   경계 밖 영역은 미리 채워둔 도화지색이 그대로 남는다. */
+function captureBgCrop(){
+  bgCropCtx.fillStyle = '#FAF7F0';
+  bgCropCtx.fillRect(0, 0, CONFIG.DOLL_SIZE, CONFIG.DOLL_SIZE);
+  if (!state.photoW) return;
+  const cropSide = dollSizePx() * CONFIG.PAINT_BG_CROP_RATIO;
+  const cx = state.doll.x * state.photoW, cy = state.doll.y * state.photoH;
+  bgCropCtx.drawImage(
+    photoBuf,
+    cx - cropSide / 2, cy - cropSide / 2, cropSide, cropSide,
+    0, 0, CONFIG.DOLL_SIZE, CONFIG.DOLL_SIZE
+  );
+}
+/* 칠하기 화면: 배경은 고정(무회전), 인형은 실제 배치 각도만큼 회전시켜 그 위에 그린다.
+   renderStage()가 사진 위에 인형을 그릴 때 쓰는 translate→rotate→flip→drawImage와 동일한 패턴. */
 function renderDollView(){
   renderDollComposite();
   viewCtx.clearRect(0, 0, CONFIG.DOLL_SIZE, CONFIG.DOLL_SIZE);
-  viewCtx.drawImage(dollComposite, 0, 0);
+  viewCtx.drawImage(bgCropCanvas, 0, 0);
+  const s = CONFIG.DOLL_SIZE * DOLL_VIEW_SCALE;
+  viewCtx.save();
+  viewCtx.translate(CONFIG.DOLL_SIZE / 2, CONFIG.DOLL_SIZE / 2);
+  viewCtx.rotate(state.doll.rotation * Math.PI / 180);
+  if (state.doll.flip) viewCtx.scale(-1, 1);
+  viewCtx.drawImage(dollComposite, -s / 2, -s / 2, s, s);
+  viewCtx.restore();
 }
 
 /* ---------- 활성 인형 ---------- */
@@ -687,7 +723,7 @@ function setPhase(phase){
   const isHome = phase === 'home';
   screenHome.classList.toggle('hidden', !isHome);
   screenMaker.classList.toggle('hidden', isHome);
-  const stageOn = ['paint','place','test','ready','play','end','view'].includes(phase);
+  const stageOn = ['place','test','ready','play','end','view'].includes(phase);
   stage.classList.toggle('hidden', !stageOn);
   const panels = {
     upload: uploadBox, paint: paintPanel, place: placePanel, test: testPanel,
@@ -705,6 +741,10 @@ function setPhase(phase){
     $('btn-back-edit').style.display = 'none';
     $('btn-giveup').style.display = '';
     clearOverlay();
+  }
+  if (phase === 'paint'){
+    captureBgCrop();
+    renderDollView();
   }
   renderStage();
 }
@@ -793,10 +833,26 @@ function undo(){
 
 /* ---------- 색칠: 브러시 ---------- */
 let painting = false, lastPt = null;
-function dollPos(e){
+/* dollView 화면(0~256) 좌표 — 배경은 무회전이라 이 좌표를 그대로 쓴다 */
+function viewPos(e){
   const r = dollView.getBoundingClientRect();
   return { x: (e.clientX - r.left) / r.width * CONFIG.DOLL_SIZE,
-           y: (e.clientY - r.top) / r.height * CONFIG.DOLL_SIZE };
+           y: (e.clientY - r.top) / r.height * CONFIG.DOLL_SIZE,
+           cssX: e.clientX - r.left, cssY: e.clientY - r.top };
+}
+/* 화면에 회전되어 보이는 인형 위 좌표를, 붓이 실제로 그려지는 인형 로컬(비회전) 좌표로 역변환.
+   renderDollView()가 그린 순서(축소→회전→반전)의 역순(반전 역→회전 역→축소 역)으로 되돌린다. */
+function dollPos(e){
+  const v = viewPos(e);
+  const c = CONFIG.DOLL_SIZE / 2;
+  const dx = (v.x - c) / DOLL_VIEW_SCALE;
+  const dy = (v.y - c) / DOLL_VIEW_SCALE;
+  const rad = -state.doll.rotation * Math.PI / 180;
+  const cos = Math.cos(rad), sin = Math.sin(rad);
+  let lx = dx * cos - dy * sin;
+  let ly = dx * sin + dy * cos;
+  if (state.doll.flip) lx = -lx;
+  return { x: lx + c, y: ly + c };
 }
 function strokeSetup(){
   paintCtx.save();
