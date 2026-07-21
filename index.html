@@ -438,6 +438,7 @@ h1,h2,h3{ margin:0; font-weight:700; }
     <div id="share-panel" class="panel solo hidden">
       <h3>숨기기 완료! 🎉</h3>
       <p class="hint-line">이 링크를 받은 친구가 인형 찾기에 도전해요</p>
+      <p class="hint-line" id="share-invite-msg"></p>
       <div class="url-row">
         <input type="text" id="share-url" readonly aria-label="플레이 공유 링크">
         <button class="btn" id="btn-copy" style="font-size:17px; padding:6px 14px;">복사</button>
@@ -982,14 +983,15 @@ function encodePhotoB64(){
   }
   return null; // 모든 단계 실패 (극히 복잡한 사진)
 }
-/* 인형 PNG 인코딩 — 예산 초과 시 192px로 축소 재시도 (투명 배경 유지 위해 PNG 고정) */
-function encodeDollB64(){
-  renderDollComposite();
-  let url = dollComposite.toDataURL('image/png');
+/* 인형 PNG 인코딩 — 예산 초과 시 192px로 축소 재시도 (투명 배경 유지 위해 PNG 고정).
+   각 인형의 dollComposite는 칠할 때마다(renderDollView 경유) 이미 최신 상태로 유지된다. */
+function encodeDollB64ForIndex(i){
+  const composite = dollSets[i].dollComposite;
+  let url = composite.toDataURL('image/png');
   if (url.length <= CONFIG.DOLL_B64_MAX) return url;
   const c = document.createElement('canvas');
   c.width = c.height = 192;
-  c.getContext('2d').drawImage(dollComposite, 0, 0, 192, 192);
+  c.getContext('2d').drawImage(composite, 0, 0, 192, 192);
   url = c.toDataURL('image/png');
   return url.length <= CONFIG.DOLL_B64_MAX ? url : null;
 }
@@ -1448,8 +1450,13 @@ async function saveStage(){
     saveMsg('사진을 꾹꾹 눌러 담는 중…', true);
     const photoB64 = encodePhotoB64();
     if (!photoB64) throw new Error('사진이 너무 복잡해서 담지 못했어요. 다른 사진으로 시도해 주세요.');
-    const dollB64 = encodeDollB64();
-    if (!dollB64) throw new Error('인형 인코딩에 실패했어요.');
+    const dolls = [];
+    for (let i = 0; i < state.dolls.length; i++){
+      const dollB64 = encodeDollB64ForIndex(i);
+      if (!dollB64) throw new Error('인형 인코딩에 실패했어요.');
+      const d = state.dolls[i];
+      dolls.push({ x: d.x, y: d.y, scale: d.scale, rotation: d.rotation, flip: d.flip, dollB64, eyedropperUses: d.eyedropperUses });
+    }
 
     const ref = fb.db.collection('stages').doc();
     const id = ref.id;
@@ -1460,13 +1467,12 @@ async function saveStage(){
     await ref.set({
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       creatorUid: fb.uid,
-      photoB64, dollB64,   // Storage 미사용: 문서에 직접 저장
-      doll: { ...state.doll },
+      photoB64,            // Storage 미사용: 문서에 직접 저장
+      dolls,
       timeLimit: CONFIG.TIME_LIMIT,
       deleteKeyHash,
       stats: { plays: 0, clears: 0, totalClearMs: 0 },
       taps: [],
-      eyedropperUses: state.eyedropperUses,
     });
 
     state.savedId = id;
@@ -1474,6 +1480,9 @@ async function saveStage(){
     $('share-url').value = base;
     $('result-url').value = base + '&view=result';
     $('delete-key').textContent = deleteKey;
+    $('share-invite-msg').textContent = dolls.length > 1
+      ? ('숨은 인형 ' + dolls.length + '마리를 찾아라!')
+      : '';
     setPhase('share');
   } catch(e){
     console.warn('저장 실패:', e);

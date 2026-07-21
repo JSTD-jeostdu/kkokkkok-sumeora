@@ -11,14 +11,31 @@ service cloud.firestore {
       // 생성: 익명 인증 + 본인 uid + 필수 필드 + 이미지 크기 예산 준수
       allow create: if request.auth != null
         && request.resource.data.creatorUid == request.auth.uid
-        && request.resource.data.keys().hasAll(['createdAt','creatorUid','photoB64','dollB64','doll','timeLimit','deleteKeyHash','stats','taps','eyedropperUses'])
+        && request.resource.data.keys().hasAll(['createdAt','creatorUid','photoB64','dolls','timeLimit','deleteKeyHash','stats','taps'])
         && request.resource.data.photoB64 is string
         && request.resource.data.photoB64.size() < 800000   // 문서 1MB 제한 예산
-        && request.resource.data.dollB64 is string
-        && request.resource.data.dollB64.size() < 200000
-        && request.resource.data.eyedropperUses is int
-        && request.resource.data.eyedropperUses >= 0
-        && request.resource.data.eyedropperUses <= 3;       // CONFIG.EYEDROPPER_MAX_USES와 동일
+        && request.resource.data.dolls is list
+        && request.resource.data.dolls.size() >= 1
+        && request.resource.data.dolls.size() <= 3          // CONFIG.MAX_DOLLS와 동일
+        && request.resource.data.dolls[0].dollB64 is string
+        && request.resource.data.dolls[0].dollB64.size() < 200000
+        && request.resource.data.dolls[0].eyedropperUses is int
+        && request.resource.data.dolls[0].eyedropperUses >= 0
+        && request.resource.data.dolls[0].eyedropperUses <= 3
+        && (request.resource.data.dolls.size() < 2 || (
+             request.resource.data.dolls[1].dollB64 is string
+          && request.resource.data.dolls[1].dollB64.size() < 200000
+          && request.resource.data.dolls[1].eyedropperUses is int
+          && request.resource.data.dolls[1].eyedropperUses >= 0
+          && request.resource.data.dolls[1].eyedropperUses <= 3
+        ))
+        && (request.resource.data.dolls.size() < 3 || (
+             request.resource.data.dolls[2].dollB64 is string
+          && request.resource.data.dolls[2].dollB64.size() < 200000
+          && request.resource.data.dolls[2].eyedropperUses is int
+          && request.resource.data.dolls[2].eyedropperUses >= 0
+          && request.resource.data.dolls[2].eyedropperUses <= 3
+        ));
 
       // 수정: 플레이 기록(stats·taps)만 변경 가능 — 사진·인형·삭제키 등 변경 거부
       allow update: if request.auth != null
