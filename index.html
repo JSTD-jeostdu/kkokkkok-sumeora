@@ -587,6 +587,7 @@ const CONFIG = {
   TIMER_DANGER: 10,
   TAPS_MAX: 500,
   KEY_LEN: 8,
+  MAX_DOLLS: 3,
   /* Firestore 문서 1MB 제한 예산 (Storage 미사용 — base64 직접 저장)
      photo ≤ 700KB + doll ≤ 150KB + taps(~20KB) + 메타 → 최대 ~880KB로 안전 */
   PHOTO_B64_MAX: 700000,
@@ -636,11 +637,11 @@ const state = {
   phase: 'home', // home|upload|paint|place|test|save|share|load|ready|play|end|view|error|delete
   photoW: 0, photoH: 0,
   photoB64: null,           // 업로드용 사진 dataURL 캐시 (적응형 압축 결과)
-  doll: { x: 0.5, y: 0.5, scale: 0.10, rotation: 0, flip: false }, // 정규화 좌표(0~1)
+  dolls: [{ x: 0.5, y: 0.5, scale: 0.10, rotation: 0, flip: false, eyedropperUses: 0 }], // 1~3개, 정규화 좌표(0~1)
+  activeDollIndex: 0,       // 지금 배치·색칠 중인 인형의 인덱스
   color: CONFIG.DEFAULT_COLOR,
   brush: 12,
   eraser: false,
-  eyedropperUses: 0,        // 이번 스테이지에서 스포이드를 쓴 횟수 (최대 EYEDROPPER_MAX_USES)
   found: false,
   reveal: false,
   savedId: null,
@@ -688,20 +689,42 @@ const swatch = $('swatch'), phaseLabel = $('phase-label'), testStatus = $('test-
 /* ---------- 오프스크린 캔버스 ---------- */
 const photoBuf = document.createElement('canvas');
 const bufCtx = photoBuf.getContext('2d', { willReadFrequently: true });
-const paintCanvas = document.createElement('canvas');
-paintCanvas.width = paintCanvas.height = CONFIG.DOLL_SIZE;
-const paintCtx = paintCanvas.getContext('2d', { willReadFrequently: true });
-const dollComposite = document.createElement('canvas');
-dollComposite.width = dollComposite.height = CONFIG.DOLL_SIZE;
-const compCtx = dollComposite.getContext('2d');
-// 칠하기 화면에서 인형 뒤에 보여줄 배경 크롭 (정적 스냅샷 — 저장되지 않음, 화면 표시 전용)
-const bgCropCanvas = document.createElement('canvas');
-bgCropCanvas.width = bgCropCanvas.height = CONFIG.DOLL_SIZE;
-const bgCropCtx = bgCropCanvas.getContext('2d', { willReadFrequently: true });
-bgCropCtx.fillStyle = '#FAF7F0';
-bgCropCtx.fillRect(0, 0, CONFIG.DOLL_SIZE, CONFIG.DOLL_SIZE);
 // 칠하기 화면에서 인형은 크롭 배율의 역수만큼 작게 그려 주변 배경이 보이도록 한다
 const DOLL_VIEW_SCALE = 1 / CONFIG.PAINT_BG_CROP_RATIO;
+/* 인형마다 독립된 캔버스 세트(붓칠·합성·배경크롭·되돌리기 이력)를 만든다.
+   paintCanvas/paintCtx/dollComposite/compCtx/bgCropCanvas/bgCropCtx/undoStack은
+   아래에서 "지금 활성 인형"의 세트를 가리키는 별칭(let)으로 선언되어,
+   탭을 바꿀 때 setActiveDollIndex()만 호출하면 기존 붓질·되돌리기·스포이드
+   함수들은 코드 수정 없이 그 인형의 캔버스에 그대로 동작한다. */
+function makeDollCanvasSet(){
+  const pc = document.createElement('canvas');
+  pc.width = pc.height = CONFIG.DOLL_SIZE;
+  const dc = document.createElement('canvas');
+  dc.width = dc.height = CONFIG.DOLL_SIZE;
+  const bc = document.createElement('canvas');
+  bc.width = bc.height = CONFIG.DOLL_SIZE;
+  const bctx = bc.getContext('2d', { willReadFrequently: true });
+  bctx.fillStyle = '#FAF7F0';
+  bctx.fillRect(0, 0, CONFIG.DOLL_SIZE, CONFIG.DOLL_SIZE);
+  return {
+    paintCanvas: pc, paintCtx: pc.getContext('2d', { willReadFrequently: true }),
+    dollComposite: dc, compCtx: dc.getContext('2d'),
+    bgCropCanvas: bc, bgCropCtx: bctx,
+    undoStack: [],
+  };
+}
+let dollSets = [makeDollCanvasSet()];
+let paintCanvas, paintCtx, dollComposite, compCtx, bgCropCanvas, bgCropCtx, undoStack;
+function setActiveDollIndex(i){
+  state.activeDollIndex = i;
+  const s = dollSets[i];
+  paintCanvas = s.paintCanvas; paintCtx = s.paintCtx;
+  dollComposite = s.dollComposite; compCtx = s.compCtx;
+  bgCropCanvas = s.bgCropCanvas; bgCropCtx = s.bgCropCtx;
+  undoStack = s.undoStack;
+}
+setActiveDollIndex(0);
+function activeEditDoll(){ return state.dolls[state.activeDollIndex]; }
 
 /* ---------- 인형 실루엣 경로 ---------- */
 function addRoundRect(p, x, y, w, h, r){
@@ -735,6 +758,26 @@ function renderDollComposite(){
   compCtx.drawImage(paintCanvas, 0, 0);
   compCtx.restore();
 }
+/* ---------- 다중 인형(md) 공용 렌더링 헬퍼 ---------- */
+function mdDollSize(d){ return d.scale * minSide(); }
+function mdDrawDoll(d, source){
+  const s = mdDollSize(d);
+  pctx2d.save();
+  pctx2d.translate(d.x * state.photoW, d.y * state.photoH);
+  pctx2d.rotate(d.rotation * Math.PI / 180);
+  if (d.flip) pctx2d.scale(-1, 1);
+  pctx2d.drawImage(source, -s / 2, -s / 2, s, s);
+  pctx2d.restore();
+}
+/* 배치·테스트 단계에서 편집 중인 인형 전부를 그린다.
+   테스트 단계에서 이미 찾은 인형은 건너뛴다(Task 4에서 testFoundFlags를 채움 —
+   그 전까지는 항상 undefined라 이 조건은 항상 통과해 전부 그려진다). */
+function mdRenderEditDolls(){
+  state.dolls.forEach((d, i) => {
+    if (state.phase === 'test' && typeof testFoundFlags !== 'undefined' && testFoundFlags && testFoundFlags[i]) return;
+    mdDrawDoll(d, dollSets[i].dollComposite);
+  });
+}
 /* 배치된 자리를 기준으로 사진을 크롭해 칠하기 화면 배경으로 캡처 (정적 스냅샷).
    drawImage는 소스 사각형이 캔버스 경계를 벗어나면 자동으로 잘라내므로 별도 clamp가 필요 없다 —
    경계 밖 영역은 미리 채워둔 도화지색이 그대로 남는다. */
@@ -742,8 +785,9 @@ function captureBgCrop(){
   bgCropCtx.fillStyle = '#FAF7F0';
   bgCropCtx.fillRect(0, 0, CONFIG.DOLL_SIZE, CONFIG.DOLL_SIZE);
   if (!state.photoW) return;
-  const cropSide = dollSizePx() * CONFIG.PAINT_BG_CROP_RATIO;
-  const cx = state.doll.x * state.photoW, cy = state.doll.y * state.photoH;
+  const d = activeEditDoll();
+  const cropSide = d.scale * minSide() * CONFIG.PAINT_BG_CROP_RATIO;
+  const cx = d.x * state.photoW, cy = d.y * state.photoH;
   bgCropCtx.drawImage(
     photoBuf,
     cx - cropSide / 2, cy - cropSide / 2, cropSide, cropSide,
@@ -759,8 +803,8 @@ function renderDollView(){
   const s = CONFIG.DOLL_SIZE * DOLL_VIEW_SCALE;
   viewCtx.save();
   viewCtx.translate(CONFIG.DOLL_SIZE / 2, CONFIG.DOLL_SIZE / 2);
-  viewCtx.rotate(state.doll.rotation * Math.PI / 180);
-  if (state.doll.flip) viewCtx.scale(-1, 1);
+  viewCtx.rotate(activeEditDoll().rotation * Math.PI / 180);
+  if (activeEditDoll().flip) viewCtx.scale(-1, 1);
   viewCtx.drawImage(dollComposite, -s / 2, -s / 2, s, s);
   viewCtx.restore();
 }
@@ -779,20 +823,23 @@ function renderStage(){
   if (!state.photoW) return;
   pctx2d.clearRect(0, 0, state.photoW, state.photoH);
   pctx2d.drawImage(photoBuf, 0, 0);
-  // 인형 표시 조건: 배치 / (테스트·실제 플레이 & 미발견) / (플레이 실패 공개) / 제작자 결과 보기
-  const show = (state.phase === 'place')
-            || (state.phase === 'test' && !state.found)
-            || (state.phase === 'play' && !state.found)
-            || (state.phase === 'end' && state.reveal)
-            || (state.phase === 'view');
-  if (show){
-    const d = activeDoll(), s = dollSizePx();
-    pctx2d.save();
-    pctx2d.translate(d.x * state.photoW, d.y * state.photoH);
-    pctx2d.rotate(d.rotation * Math.PI / 180);
-    if (d.flip) pctx2d.scale(-1, 1);
-    pctx2d.drawImage(activeDollSource(), -s/2, -s/2, s, s);
-    pctx2d.restore();
+  if (state.phase === 'place' || state.phase === 'test'){
+    // 배치·테스트 단계는 항상 다중 인형 배열(state.dolls) 기반으로 그린다 — 편집기는 앞으로 이 경로만 쓴다
+    mdRenderEditDolls();
+  } else {
+    // ---- 기존 단일 인형 경로 (레거시 원격 플레이 전용, 무변경 — Task 6에서 dolls 배열 분기 추가 예정) ----
+    const show = (state.phase === 'play' && !state.found)
+              || (state.phase === 'end' && state.reveal)
+              || (state.phase === 'view');
+    if (show){
+      const d = activeDoll(), s = dollSizePx();
+      pctx2d.save();
+      pctx2d.translate(d.x * state.photoW, d.y * state.photoH);
+      pctx2d.rotate(d.rotation * Math.PI / 180);
+      if (d.flip) pctx2d.scale(-1, 1);
+      pctx2d.drawImage(activeDollSource(), -s/2, -s/2, s, s);
+      pctx2d.restore();
+    }
   }
   // 제작자 결과 보기: 탭 히트맵 (반투명 점, 겹칠수록 진해짐 — 라이브러리 없이 캔버스로)
   if (state.phase === 'view' && resultTaps && resultTaps.length){
@@ -916,7 +963,6 @@ function encodeDollB64(){
 }
 
 /* ---------- 색칠: 실행취소 ---------- */
-const undoStack = [];
 function pushUndo(){
   if (undoStack.length >= CONFIG.UNDO_MAX) undoStack.shift();
   undoStack.push(paintCtx.getImageData(0, 0, CONFIG.DOLL_SIZE, CONFIG.DOLL_SIZE));
@@ -945,16 +991,17 @@ function dollPos(e){
   const c = CONFIG.DOLL_SIZE / 2;
   const dx = (v.x - c) / DOLL_VIEW_SCALE;
   const dy = (v.y - c) / DOLL_VIEW_SCALE;
-  const rad = -state.doll.rotation * Math.PI / 180;
+  const d = activeEditDoll();
+  const rad = -d.rotation * Math.PI / 180;
   const cos = Math.cos(rad), sin = Math.sin(rad);
   let lx = dx * cos - dy * sin;
   let ly = dx * sin + dy * cos;
-  if (state.doll.flip) lx = -lx;
+  if (d.flip) lx = -lx;
   return { x: lx + c, y: ly + c };
 }
 /* 스포이드 남은 횟수를 표시하고, 다 쓰면 버튼을 비활성화한다 */
 function updateEyedropperUI(){
-  const remaining = Math.max(0, CONFIG.EYEDROPPER_MAX_USES - state.eyedropperUses);
+  const remaining = Math.max(0, CONFIG.EYEDROPPER_MAX_USES - activeEditDoll().eyedropperUses);
   $('eyedropper-count').textContent = remaining;
   $('btn-eyedropper').disabled = remaining <= 0;
   if (remaining <= 0) eyedropperOn = false;
@@ -970,7 +1017,7 @@ function pickColorFromCrop(vx, vy, cssX, cssY){
   state.eraser = false;
   $('btn-eraser').setAttribute('aria-pressed', 'false');
   swatch.style.background = state.color;
-  state.eyedropperUses++;
+  activeEditDoll().eyedropperUses++;
   eyedropperOn = false;
   updateEyedropperUI();
   const pop = document.createElement('div');
@@ -1077,9 +1124,10 @@ function rgbToHsv(r, g, b){
 /* ---------- 배치 드래그 ---------- */
 let dragging = false;
 function nearDoll(nx, ny){
-  const dx = (nx - state.doll.x) * state.photoW;
-  const dy = (ny - state.doll.y) * state.photoH;
-  const grabR = Math.max(dollSizePx() * 0.9, minSide() * 0.09);
+  const d = activeEditDoll();
+  const dx = (nx - d.x) * state.photoW;
+  const dy = (ny - d.y) * state.photoH;
+  const grabR = Math.max(d.scale * minSide() * 0.9, minSide() * 0.09);
   return Math.hypot(dx, dy) <= grabR;
 }
 
@@ -1227,8 +1275,9 @@ photoCanvas.addEventListener('pointerdown', (e) => {
 photoCanvas.addEventListener('pointermove', (e) => {
   if (!dragging || state.phase !== 'place') return;
   const p = stagePos(e);
-  state.doll.x = Math.min(0.98, Math.max(0.02, p.nx));
-  state.doll.y = Math.min(0.98, Math.max(0.02, p.ny));
+  const d = activeEditDoll();
+  d.x = Math.min(0.98, Math.max(0.02, p.nx));
+  d.y = Math.min(0.98, Math.max(0.02, p.ny));
   renderStage();
 });
 function endDrag(){ dragging = false; }
@@ -1879,18 +1928,18 @@ document.addEventListener('keydown', (e) => {
 
 /* ---------- 배치 컨트롤 배선 ---------- */
 $('sc-scale').addEventListener('input', (e) => {
-  state.doll.scale = Number(e.target.value) / 100;
+  activeEditDoll().scale = Number(e.target.value) / 100;
   $('out-scale').textContent = e.target.value + '%';
   renderStage();
 });
 $('sc-rot').addEventListener('input', (e) => {
-  state.doll.rotation = Number(e.target.value);
+  activeEditDoll().rotation = Number(e.target.value);
   $('out-rot').textContent = e.target.value + '°';
   renderStage();
 });
 $('btn-flip').addEventListener('click', () => {
-  state.doll.flip = !state.doll.flip;
-  $('btn-flip').setAttribute('aria-pressed', String(state.doll.flip));
+  activeEditDoll().flip = !activeEditDoll().flip;
+  $('btn-flip').setAttribute('aria-pressed', String(activeEditDoll().flip));
   renderStage();
 });
 
@@ -1960,18 +2009,17 @@ $('hint-flash').addEventListener('click', hintFlash);
 function resetAll(){
   state.photoW = state.photoH = 0;
   state.photoB64 = null;
-  state.doll = { x: 0.5, y: 0.5, scale: 0.10, rotation: 0, flip: false };
+  state.dolls = [{ x: 0.5, y: 0.5, scale: 0.10, rotation: 0, flip: false, eyedropperUses: 0 }];
+  dollSets = [makeDollCanvasSet()];
+  setActiveDollIndex(0);
   state.found = false;
   state.reveal = false;
   state.savedId = null;
-  state.eyedropperUses = 0;
   eyedropperOn = false;
   playStage = null;
   remoteDollImg = null;
   playRun = null;
   resultTaps = null;
-  undoStack.length = 0;
-  paintCtx.clearRect(0, 0, CONFIG.DOLL_SIZE, CONFIG.DOLL_SIZE);
   $('sc-scale').value = 10; $('out-scale').textContent = '10%';
   $('sc-rot').value = 0;   $('out-rot').textContent = '0°';
   $('btn-flip').setAttribute('aria-pressed', 'false');
