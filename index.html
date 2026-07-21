@@ -169,8 +169,6 @@ h1,h2,h3{ margin:0; font-weight:700; }
 .tool-btn[aria-pressed="true"]{ background:var(--pencil); color:#fff; }
 .tool-btn:disabled{ opacity:.35; cursor:default; }
 .tool-btn:focus-visible{ outline:3px solid var(--accent); outline-offset:2px; }
-#color-picker{ width:40px; height:40px; padding:2px; border:2px solid var(--pencil);
-  border-radius:10px; background:#fff; cursor:pointer; flex:0 0 auto; }
 #swatch{ width:44px; height:44px; border-radius:50%; border:3px solid #fff;
   box-shadow:0 0 0 2px var(--pencil), var(--shadow); flex:0 0 auto; }
 .brush-dot{ display:inline-block; border-radius:50%; background:currentColor; vertical-align:middle; }
@@ -385,7 +383,6 @@ h1,h2,h3{ margin:0; font-weight:700; }
         </div>
         <div class="tools">
           <div class="tool-row">
-            <input type="color" id="color-picker" value="#E45B5B" aria-label="색상 선택">
             <div id="swatch" title="지금 색" aria-label="현재 선택된 색"></div>
             <button class="tool-btn brush-btn" data-size="24" aria-pressed="false" aria-label="큰 붓"><span class="brush-dot" style="width:16px;height:16px;"></span></button>
             <button class="tool-btn brush-btn" data-size="12" aria-pressed="true"  aria-label="중간 붓"><span class="brush-dot" style="width:10px;height:10px;"></span></button>
@@ -973,7 +970,6 @@ function pickColorFromCrop(vx, vy, cssX, cssY){
   state.eraser = false;
   $('btn-eraser').setAttribute('aria-pressed', 'false');
   swatch.style.background = state.color;
-  $('color-picker').value = state.color;
   state.eyedropperUses++;
   eyedropperOn = false;
   updateEyedropperUI();
@@ -1715,12 +1711,6 @@ document.querySelectorAll('.brush-btn').forEach((btn) => {
     document.querySelectorAll('.brush-btn').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
   });
 });
-$('color-picker').addEventListener('input', (e) => {
-  state.color = e.target.value;
-  state.eraser = false;
-  $('btn-eraser').setAttribute('aria-pressed', 'false');
-  swatch.style.background = state.color;
-});
 $('btn-eraser').addEventListener('click', () => {
   state.eraser = !state.eraser;
   $('btn-eraser').setAttribute('aria-pressed', String(state.eraser));
@@ -1822,6 +1812,39 @@ swatch.setAttribute('aria-label', '색상 선택 열기');
 swatch.addEventListener('click', openColorPicker);
 swatch.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openColorPicker(); }
+});
+
+/* HEX 입력 동기화: 사용자가 직접 입력한 HEX → SV/Hue 상태 업데이트 */
+cpHex.addEventListener('input', () => {
+  const rgb = hexToRgb(cpHex.value);
+  if (!rgb) return; // 완성되지 않은 입력은 무시
+  const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b);
+  cpState.h = hsv.h; cpState.s = hsv.s; cpState.v = hsv.v;
+  renderSVBox(cpState.h);
+  updateThumbs();
+  cpPreview.style.background = hsvToHex(cpState.h, cpState.s, cpState.v);
+});
+
+/* 컬러피커 모달 닫기 */
+function closeColorPicker(){
+  colorpickerModal.classList.add('hidden');
+}
+
+/* 모달 닫기 버튼 */
+$('btn-cp-close').addEventListener('click', closeColorPicker);
+
+/* 모달 배경 클릭 시 닫기 */
+colorpickerModal.addEventListener('click', (e) => {
+  if (e.target === colorpickerModal) closeColorPicker();
+});
+
+/* 확인 버튼: 선택한 색을 state.color에 적용하고 모달 닫기 */
+$('btn-cp-confirm').addEventListener('click', () => {
+  state.color = hsvToHex(cpState.h, cpState.s, cpState.v);
+  state.eraser = false;
+  $('btn-eraser').setAttribute('aria-pressed', 'false');
+  swatch.style.background = state.color;
+  closeColorPicker();
 });
 
 /* ---------- 색칠 확대 모달 ---------- */
