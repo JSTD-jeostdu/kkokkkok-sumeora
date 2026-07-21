@@ -1645,6 +1645,29 @@ $('btn-eyedropper').addEventListener('click', () => {
   $('btn-eyedropper').setAttribute('aria-pressed', String(eyedropperOn));
 });
 
+/* ---------- 색칠 확대 모달 ---------- */
+const zoomModal = $('zoom-modal');
+const zoomCanvasSlot = $('zoom-canvas-slot'), zoomToolsSlot = $('zoom-tools-slot');
+const dollViewWrap = dollView.parentElement;
+const toolsDiv = document.querySelector('#paint-panel .tools');
+const paintRow = document.querySelector('#paint-panel .paint-row');
+let zoomOpen = false;
+function openZoom(){
+  zoomCanvasSlot.appendChild(dollViewWrap);
+  zoomToolsSlot.appendChild(toolsDiv);
+  zoomModal.classList.remove('hidden');
+  zoomOpen = true;
+}
+function closeZoom(){
+  if (!zoomOpen) return;
+  paintRow.appendChild(dollViewWrap);
+  paintRow.appendChild(toolsDiv);
+  zoomModal.classList.add('hidden');
+  zoomOpen = false;
+}
+$('btn-zoom-paint').addEventListener('click', openZoom);
+$('btn-zoom-close').addEventListener('click', closeZoom);
+
 /* ---------- 배치 컨트롤 배선 ---------- */
 $('sc-scale').addEventListener('input', (e) => {
   state.doll.scale = Number(e.target.value) / 100;
