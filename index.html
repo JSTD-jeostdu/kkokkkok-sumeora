@@ -758,6 +758,7 @@ const PHASE_LABELS = {
   end:'결과', view:'결과 보기', error:'앗', 'delete':'스테이지 삭제',
 };
 function setPhase(phase){
+  if (zoomOpen) closeZoom();
   state.phase = phase;
   const isHome = phase === 'home';
   screenHome.classList.toggle('hidden', !isHome);
@@ -1656,17 +1657,24 @@ function openZoom(){
   zoomCanvasSlot.appendChild(dollViewWrap);
   zoomToolsSlot.appendChild(toolsDiv);
   zoomModal.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
   zoomOpen = true;
+  $('btn-zoom-close').focus();
 }
 function closeZoom(){
   if (!zoomOpen) return;
   paintRow.appendChild(dollViewWrap);
   paintRow.appendChild(toolsDiv);
   zoomModal.classList.add('hidden');
+  document.body.style.overflow = '';
   zoomOpen = false;
+  $('btn-zoom-paint').focus();
 }
 $('btn-zoom-paint').addEventListener('click', openZoom);
 $('btn-zoom-close').addEventListener('click', closeZoom);
+document.addEventListener('keydown', (e) => {
+  if (zoomOpen && e.key === 'Escape') closeZoom();
+});
 
 /* ---------- 배치 컨트롤 배선 ---------- */
 $('sc-scale').addEventListener('input', (e) => {
