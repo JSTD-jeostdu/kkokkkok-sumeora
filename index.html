@@ -535,8 +535,6 @@ const CONFIG = {
     { max: 900,  q: 0.5 },
   ],
   DEFAULT_COLOR: '#E45B5B',
-  OUTLINE_COLOR: 'rgba(74,74,74,.85)',
-  OUTLINE_WIDTH: 2.5,
   HEAT_ALPHA: 0.22,          // 히트맵 점 하나의 투명도 (겹칠수록 진해짐)
   HEAT_R_RATIO: 0.022,       // 히트맵 점 반경 (사진 짧은 변 대비)
   FLASH_MS: 500,             // 힌트 ③ 반짝 지속 시간
@@ -673,10 +671,6 @@ function renderDollComposite(){
   compCtx.clip(dollPath);
   compCtx.drawImage(paintCanvas, 0, 0);
   compCtx.restore();
-  compCtx.lineWidth = CONFIG.OUTLINE_WIDTH;
-  compCtx.strokeStyle = CONFIG.OUTLINE_COLOR;
-  compCtx.lineJoin = 'round';
-  compCtx.stroke(dollPath);
 }
 /* 배치된 자리를 기준으로 사진을 크롭해 칠하기 화면 배경으로 캡처 (정적 스냅샷).
    drawImage는 소스 사각형이 캔버스 경계를 벗어나면 자동으로 잘라내므로 별도 clamp가 필요 없다 —
