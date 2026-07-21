@@ -663,6 +663,8 @@ let remoteDollImg = null;
 let playRun = null;      // { start, taps, ended, cleared, clearMs, hints, tempOn }
 let resultTaps = null;   // 제작자 결과 보기용 탭 기록
 let timerIv = null, countdownIv = null;
+let testFoundFlags = null;   // 로컬 테스트 플레이 중 인형별 발견 여부(state.dolls와 같은 길이)
+let playFoundFlags = null;   // 신규 포맷 원격 플레이 중 인형별 발견 여부 (Task 6에서 사용)
 
 /* ---------- Firebase (익명 인증) ---------- */
 const fb = { db: null, uid: null, ready: false };
@@ -778,12 +780,25 @@ function mdDrawDoll(d, source){
   pctx2d.drawImage(source, -s / 2, -s / 2, s, s);
   pctx2d.restore();
 }
+function mdAllFound(flags){ return !!flags && flags.length > 0 && flags.every(Boolean); }
+function mdSpawnFoundDoll(d, source){
+  const { kx, ky } = cssScale();
+  const sizeCss = mdDollSize(d) * kx;
+  const img = document.createElement('img');
+  img.className = 'found-doll';
+  img.src = (source instanceof HTMLImageElement) ? source.src : source.toDataURL();
+  img.alt = '찾아낸 종이인형';
+  img.style.width = sizeCss + 'px';
+  img.style.height = sizeCss + 'px';
+  img.style.left = (d.x * state.photoW * kx - sizeCss / 2) + 'px';
+  img.style.top  = (d.y * state.photoH * ky - sizeCss / 2) + 'px';
+  overlay.appendChild(img);
+}
 /* 배치·테스트 단계에서 편집 중인 인형 전부를 그린다.
-   테스트 단계에서 이미 찾은 인형은 건너뛴다(Task 4에서 testFoundFlags를 채움 —
-   그 전까지는 항상 undefined라 이 조건은 항상 통과해 전부 그려진다). */
+   테스트 단계에서 이미 찾은 인형은 건너뛴다. */
 function mdRenderEditDolls(){
   state.dolls.forEach((d, i) => {
-    if (state.phase === 'test' && typeof testFoundFlags !== 'undefined' && testFoundFlags && testFoundFlags[i]) return;
+    if (state.phase === 'test' && testFoundFlags && testFoundFlags[i]) return;
     mdDrawDoll(d, dollSets[i].dollComposite);
   });
 }
@@ -893,7 +908,10 @@ function setPhase(phase){
   }
   if (phase === 'test'){
     state.found = false;
-    testStatus.textContent = '인형이 어디 숨었을까? 사진을 눌러 찾아보세요!';
+    testFoundFlags = state.dolls.map(() => false);
+    testStatus.textContent = state.dolls.length > 1
+      ? '인형들이 어디 숨었을까? 사진을 눌러 찾아보세요! (0/' + state.dolls.length + ')'
+      : '인형이 어디 숨었을까? 사진을 눌러 찾아보세요!';
     testStatus.classList.remove('win');
     $('btn-back-edit').style.display = 'none';
     $('btn-giveup').style.display = '';
@@ -1225,6 +1243,17 @@ function nearDoll(nx, ny){
   const grabR = Math.max(d.scale * minSide() * 0.9, minSide() * 0.09);
   return Math.hypot(dx, dy) <= grabR;
 }
+function mdEditHitTestIndex(nx, ny){
+  for (let i = 0; i < state.dolls.length; i++){
+    if (testFoundFlags[i]) continue;
+    const d = state.dolls[i];
+    const s = mdDollSize(d);
+    const dx = (nx - d.x) * state.photoW, dy = (ny - d.y) * state.photoH;
+    const r = Math.max(s * 0.5 * CONFIG.HIT_MARGIN, minSide() * CONFIG.HIT_MIN_RATIO);
+    if (Math.hypot(dx, dy) <= r) return i;
+  }
+  return -1;
+}
 
 /* ---------- 판정·연출 ---------- */
 function hitTest(nx, ny){
@@ -1343,16 +1372,22 @@ photoCanvas.addEventListener('pointerdown', (e) => {
       photoCanvas.setPointerCapture(e.pointerId);
     }
   } else if (state.phase === 'test'){
-    if (state.found) return;
-    if (hitTest(p.nx, p.ny)){
-      state.found = true;
+    if (mdAllFound(testFoundFlags)) return;
+    const idx = mdEditHitTestIndex(p.nx, p.ny);
+    if (idx !== -1){
+      testFoundFlags[idx] = true;
       renderStage();
-      spawnFoundDoll();
-      testStatus.textContent = '찾았다! 🎉 위장이 뚫렸네요';
-      testStatus.classList.add('win');
-      $('btn-back-edit').style.display = '';
-      $('btn-giveup').style.display = 'none';
+      mdSpawnFoundDoll(state.dolls[idx], dollSets[idx].dollComposite);
       if (navigator.vibrate) navigator.vibrate(80);
+      if (mdAllFound(testFoundFlags)){
+        testStatus.textContent = '찾았다! 🎉 위장이 뚫렸네요';
+        testStatus.classList.add('win');
+        $('btn-back-edit').style.display = '';
+        $('btn-giveup').style.display = 'none';
+      } else {
+        const foundCount = testFoundFlags.filter(Boolean).length;
+        testStatus.textContent = foundCount + '/' + state.dolls.length + ' 찾음 — 계속 찾아보세요!';
+      }
     } else {
       spawnRipple(p.cssX, p.cssY);
     }
