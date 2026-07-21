@@ -1738,6 +1738,92 @@ $('btn-eyedropper').addEventListener('click', () => {
   $('btn-eyedropper').setAttribute('aria-pressed', String(eyedropperOn));
 });
 
+/* ---------- 컬러피커 ---------- */
+const cpState = { h: 0, s: 0, v: 0 };
+const cpSvBox = $('cp-svbox'), cpSvCtx = cpSvBox.getContext('2d');
+const cpSvThumb = $('cp-sv-thumb'), cpSvWrap = document.querySelector('.cp-svbox-wrap');
+const cpHueTrack = $('cp-hue-track'), cpHueThumb = $('cp-hue-thumb');
+const cpPreview = $('cp-preview'), cpHex = $('cp-hex');
+const colorpickerModal = $('colorpicker-modal');
+
+function renderSVBox(hue){
+  const w = cpSvBox.width, h = cpSvBox.height;
+  cpSvCtx.fillStyle = hsvToHex(hue, 100, 100);
+  cpSvCtx.fillRect(0, 0, w, h);
+  const gWhite = cpSvCtx.createLinearGradient(0, 0, w, 0);
+  gWhite.addColorStop(0, 'rgba(255,255,255,1)');
+  gWhite.addColorStop(1, 'rgba(255,255,255,0)');
+  cpSvCtx.fillStyle = gWhite;
+  cpSvCtx.fillRect(0, 0, w, h);
+  const gBlack = cpSvCtx.createLinearGradient(0, 0, 0, h);
+  gBlack.addColorStop(0, 'rgba(0,0,0,0)');
+  gBlack.addColorStop(1, 'rgba(0,0,0,1)');
+  cpSvCtx.fillStyle = gBlack;
+  cpSvCtx.fillRect(0, 0, w, h);
+}
+function updateThumbs(){
+  cpSvThumb.style.left = (cpState.s / 100 * 100) + '%';
+  cpSvThumb.style.top = ((1 - cpState.v / 100) * 100) + '%';
+  cpHueThumb.style.left = (cpState.h / 360 * 100) + '%';
+}
+function updatePreview(){
+  const hex = hsvToHex(cpState.h, cpState.s, cpState.v);
+  cpPreview.style.background = hex;
+  if (document.activeElement !== cpHex) cpHex.value = hex;
+}
+function cpSvPosToState(e){
+  const r = cpSvWrap.getBoundingClientRect();
+  const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+  const y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+  cpState.s = x * 100;
+  cpState.v = (1 - y) * 100;
+}
+function cpHuePosToState(e){
+  const r = cpHueTrack.getBoundingClientRect();
+  const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+  cpState.h = x * 360;
+}
+let cpSvDragging = false, cpHueDragging = false;
+cpSvWrap.addEventListener('pointerdown', (e) => {
+  cpSvDragging = true;
+  cpSvWrap.setPointerCapture(e.pointerId);
+  cpSvPosToState(e); updateThumbs(); updatePreview();
+});
+cpSvWrap.addEventListener('pointermove', (e) => {
+  if (!cpSvDragging) return;
+  cpSvPosToState(e); updateThumbs(); updatePreview();
+});
+cpSvWrap.addEventListener('pointerup', () => { cpSvDragging = false; });
+cpSvWrap.addEventListener('pointercancel', () => { cpSvDragging = false; });
+cpHueTrack.addEventListener('pointerdown', (e) => {
+  cpHueDragging = true;
+  cpHueTrack.setPointerCapture(e.pointerId);
+  cpHuePosToState(e); renderSVBox(cpState.h); updateThumbs(); updatePreview();
+});
+cpHueTrack.addEventListener('pointermove', (e) => {
+  if (!cpHueDragging) return;
+  cpHuePosToState(e); renderSVBox(cpState.h); updateThumbs(); updatePreview();
+});
+cpHueTrack.addEventListener('pointerup', () => { cpHueDragging = false; });
+cpHueTrack.addEventListener('pointercancel', () => { cpHueDragging = false; });
+
+function openColorPicker(){
+  const rgb = hexToRgb(state.color) || { r: 228, g: 91, b: 91 };
+  const hsv = rgbToHsv(rgb.r, rgb.g, rgb.b);
+  cpState.h = hsv.h; cpState.s = hsv.s; cpState.v = hsv.v;
+  renderSVBox(cpState.h);
+  updateThumbs();
+  updatePreview();
+  colorpickerModal.classList.remove('hidden');
+}
+swatch.setAttribute('role', 'button');
+swatch.setAttribute('tabindex', '0');
+swatch.setAttribute('aria-label', '색상 선택 열기');
+swatch.addEventListener('click', openColorPicker);
+swatch.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openColorPicker(); }
+});
+
 /* ---------- 색칠 확대 모달 ---------- */
 const zoomModal = $('zoom-modal');
 const zoomCanvasSlot = $('zoom-canvas-slot'), zoomToolsSlot = $('zoom-tools-slot');
