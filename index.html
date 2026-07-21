@@ -243,6 +243,10 @@ h1,h2,h3{ margin:0; font-weight:700; }
 .slider-row input[type=range]{ flex:1; accent-color:var(--accent); height:32px; }
 .slider-row output{ width:52px; text-align:right; font-size:16px; color:var(--pencil-soft); }
 
+.doll-tab-row{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+.doll-tab-item{ display:flex; gap:2px; }
+.doll-tab-del{ font-size:14px; padding:4px 8px; }
+
 #test-status{ font-size:22px; text-align:center; margin:4px 0 10px; }
 #test-status.win{ color:var(--accent); }
 
@@ -355,6 +359,7 @@ h1,h2,h3{ margin:0; font-weight:700; }
     <!-- 배치 패널 (먼저 위치·크기·회전을 정한다) -->
     <div id="place-panel" class="panel hidden">
       <h3>인형을 몰래 숨겨두자 🤫</h3>
+      <div class="doll-tab-row" id="doll-tabs"></div>
       <p class="hint-line">인형을 <b>손가락으로 끌어서</b> 옮길 수 있어요</p>
       <div class="slider-row">
         <label for="sc-scale">크기</label>
@@ -878,6 +883,10 @@ function setPhase(phase){
   Object.values(panels).forEach((el) => el.classList.add('hidden'));
   if (panels[phase]) panels[phase].classList.remove('hidden');
   phaseLabel.textContent = PHASE_LABELS[phase] || '';
+  if (phase === 'place'){
+    renderDollTabs();
+    syncPlaceControlsToActiveDoll();
+  }
   if (phase === 'test'){
     state.found = false;
     testStatus.textContent = '인형이 어디 숨었을까? 사진을 눌러 찾아보세요!';
@@ -1119,6 +1128,73 @@ function rgbToHsv(r, g, b){
   }
   if (h < 0) h += 360;
   return { h, s: max === 0 ? 0 : (d / max) * 100, v: max * 100 };
+}
+
+/* ---------- 배치: 인형 탭(선택·추가·삭제) ---------- */
+function syncPlaceControlsToActiveDoll(){
+  const d = activeEditDoll();
+  $('sc-scale').value = Math.round(d.scale * 100 * 2) / 2;
+  $('out-scale').textContent = $('sc-scale').value + '%';
+  $('sc-rot').value = d.rotation;
+  $('out-rot').textContent = d.rotation + '°';
+  $('btn-flip').setAttribute('aria-pressed', String(d.flip));
+  updateEyedropperUI();
+}
+function renderDollTabs(){
+  const wrap = $('doll-tabs');
+  wrap.innerHTML = '';
+  const circled = ['①', '②', '③'];
+  state.dolls.forEach((d, i) => {
+    const item = document.createElement('div');
+    item.className = 'doll-tab-item';
+    const tab = document.createElement('button');
+    tab.className = 'tool-btn doll-tab';
+    tab.textContent = circled[i] || String(i + 1);
+    tab.setAttribute('aria-pressed', String(i === state.activeDollIndex));
+    tab.setAttribute('aria-label', '인형 ' + (i + 1) + ' 선택');
+    tab.addEventListener('click', () => selectDollTab(i));
+    item.appendChild(tab);
+    if (state.dolls.length > 1){
+      const del = document.createElement('button');
+      del.className = 'tool-btn doll-tab-del';
+      del.textContent = '✕';
+      del.setAttribute('aria-label', '인형 ' + (i + 1) + ' 삭제');
+      del.addEventListener('click', (e) => { e.stopPropagation(); deleteDollTab(i); });
+      item.appendChild(del);
+    }
+    wrap.appendChild(item);
+  });
+  if (state.dolls.length < CONFIG.MAX_DOLLS){
+    const add = document.createElement('button');
+    add.className = 'tool-btn';
+    add.id = 'btn-add-doll';
+    add.textContent = '+ 인형';
+    add.setAttribute('aria-label', '인형 추가');
+    add.addEventListener('click', addDoll);
+    wrap.appendChild(add);
+  }
+}
+function selectDollTab(i){
+  setActiveDollIndex(i);
+  syncPlaceControlsToActiveDoll();
+  renderDollTabs();
+  renderDollView();
+  renderStage();
+}
+function addDoll(){
+  if (state.dolls.length >= CONFIG.MAX_DOLLS) return;
+  state.dolls.push({ x: 0.5, y: 0.5, scale: 0.10, rotation: 0, flip: false, eyedropperUses: 0 });
+  dollSets.push(makeDollCanvasSet());
+  setPhase('place');
+  selectDollTab(state.dolls.length - 1);
+}
+function deleteDollTab(i){
+  if (state.dolls.length <= 1) return;
+  if (!confirm('인형 ' + (i + 1) + '을(를) 삭제할까요?')) return;
+  state.dolls.splice(i, 1);
+  dollSets.splice(i, 1);
+  const newIndex = Math.min(i, state.dolls.length - 1);
+  selectDollTab(newIndex);
 }
 
 /* ---------- 배치 드래그 ---------- */
