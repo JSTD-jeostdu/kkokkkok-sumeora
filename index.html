@@ -661,6 +661,7 @@ const state = {
 
 let playStage = null;    // { id, ref, doll, timeLimit, stats }
 let remoteDollImg = null;
+let remoteDollImgs = null;   // 신규 포맷(dolls 배열) 원격 플레이용 로드된 인형 이미지 배열
 let playRun = null;      // { start, taps, ended, cleared, clearMs, hints, tempOn }
 let resultTaps = null;   // 제작자 결과 보기용 탭 기록
 let timerIv = null, countdownIv = null;
@@ -795,6 +796,51 @@ function mdSpawnFoundDoll(d, source){
   img.style.top  = (d.y * state.photoH * ky - sizeCss / 2) + 'px';
   overlay.appendChild(img);
 }
+/* ---------- 원격 플레이(신규 dolls 배열) 전용 헬퍼 ---------- */
+function mdHitTestIndex(dolls, foundFlags, nx, ny){
+  for (let i = 0; i < dolls.length; i++){
+    if (foundFlags[i]) continue;
+    const d = dolls[i];
+    const s = mdDollSize(d);
+    const dx = (nx - d.x) * state.photoW, dy = (ny - d.y) * state.photoH;
+    const r = Math.max(s * 0.5 * CONFIG.HIT_MARGIN, minSide() * CONFIG.HIT_MIN_RATIO);
+    if (Math.hypot(dx, dy) <= r) return i;
+  }
+  return -1;
+}
+function mdRenderPlayDolls(){
+  playStage.dolls.forEach((d, i) => {
+    if (playFoundFlags && playFoundFlags[i]) return;
+    mdDrawDoll(d, remoteDollImgs[i]);
+  });
+}
+function mdSpawnRevealRings(){
+  playStage.dolls.forEach((d, i) => {
+    if (playFoundFlags[i]) return;
+    const { kx, ky } = cssScale();
+    const sizeCss = Math.max(mdDollSize(d) * kx * 1.6, 56);
+    const ring = document.createElement('div');
+    ring.className = 'reveal-ring';
+    ring.style.width = sizeCss + 'px';
+    ring.style.height = sizeCss + 'px';
+    ring.style.left = (d.x * state.photoW * kx - sizeCss / 2) + 'px';
+    ring.style.top  = (d.y * state.photoH * ky - sizeCss / 2) + 'px';
+    overlay.appendChild(ring);
+  });
+}
+function mdAnyEyedropperUsed(dolls){ return dolls.some((d) => d.eyedropperUses > 0); }
+/* "가장 가까운 미발견 인형" = 가장 최근 탭 위치(없으면 사진 중앙) 기준 최근접 */
+function mdNearestUnfoundIndex(){
+  const taps = playRun.taps;
+  const last = taps.length ? taps[taps.length - 1] : { x: 0.5, y: 0.5 };
+  let best = -1, bestDist = Infinity;
+  playStage.dolls.forEach((d, i) => {
+    if (playFoundFlags[i]) return;
+    const dist = Math.hypot((d.x - last.x) * state.photoW, (d.y - last.y) * state.photoH);
+    if (dist < bestDist){ bestDist = dist; best = i; }
+  });
+  return best;
+}
 /* 배치·테스트 단계에서 편집 중인 인형 전부를 그린다.
    테스트 단계에서 이미 찾은 인형은 건너뛴다. */
 function mdRenderEditDolls(){
@@ -851,11 +897,21 @@ function renderStage(){
   if (state.phase === 'place' || state.phase === 'test'){
     // 배치·테스트 단계는 항상 다중 인형 배열(state.dolls) 기반으로 그린다 — 편집기는 앞으로 이 경로만 쓴다
     mdRenderEditDolls();
+  } else if (playStage && playStage.dolls && (
+       (state.phase === 'play' && !mdAllFound(playFoundFlags))
+    || (state.phase === 'end' && state.reveal)
+    || (state.phase === 'view')
+  )){
+    mdRenderPlayDolls();
   } else {
-    // ---- 기존 단일 인형 경로 (레거시 원격 플레이 전용, 무변경 — Task 6에서 dolls 배열 분기 추가 예정) ----
-    const show = (state.phase === 'play' && !state.found)
+    // ---- 기존 단일 인형 경로 (레거시 원격 플레이 전용, 무변경) ----
+    // (!playStage || !playStage.dolls) 가드: 다중 인형 스테이지에서 마지막 인형을 찾은 직후
+    // (mdAllFound===true, state.found는 아직 false인 찰나) 위 md 분기 조건이 거짓이 되어
+    // 이 레거시 블록으로 떨어지는 경우, playStage.doll(존재하지 않음)을 참조해 죽지 않도록 방지한다.
+    const show = (!playStage || !playStage.dolls) && (
+                 (state.phase === 'play' && !state.found)
               || (state.phase === 'end' && state.reveal)
-              || (state.phase === 'view');
+              || (state.phase === 'view'));
     if (show){
       const d = activeDoll(), s = dollSizePx();
       pctx2d.save();
@@ -1315,6 +1371,17 @@ function useHint(btn){
   playRun.hints++;
   return true;
 }
+/* 다중 인형용: 힌트 종류당 최대 사용 횟수 = 인형 개수 (다 쓰면 버튼 비활성화) */
+function mdUseHint(btn, key){
+  if (!playRun || playRun.ended) return false;
+  playRun.mdHintCounts = playRun.mdHintCounts || { quad: 0, temp: 0, flash: 0 };
+  const max = playStage.dolls.length;
+  if (playRun.mdHintCounts[key] >= max) return false;
+  playRun.mdHintCounts[key]++;
+  playRun.hints++;
+  if (playRun.mdHintCounts[key] >= max) btn.disabled = true;
+  return true;
+}
 // 힌트 ① 사분면: 점선 십자 + 인형이 있는 사분면을 1.5초 밝게
 function hintQuadrant(){
   if (!useHint($('hint-quad'))) return;
@@ -1363,6 +1430,57 @@ function hintFlash(){
   pctx2d.restore();
   setTimeout(renderStage, CONFIG.FLASH_MS);
 }
+function mdHintQuadrant(){
+  if (!mdUseHint($('hint-quad'), 'quad')) return;
+  const i = mdNearestUnfoundIndex();
+  if (i === -1) return;
+  const d = playStage.dolls[i];
+  const v = document.createElement('div'); v.className = 'quad-line-v';
+  const h = document.createElement('div'); h.className = 'quad-line-h';
+  const hl = document.createElement('div'); hl.className = 'quad-hl';
+  hl.style.left = (d.x < 0.5 ? '0' : '50%');
+  hl.style.top  = (d.y < 0.5 ? '0' : '50%');
+  overlay.appendChild(v); overlay.appendChild(h); overlay.appendChild(hl);
+  setTimeout(() => { v.remove(); h.remove(); hl.remove(); }, 1500);
+}
+function mdHintTemp(){
+  if (!mdUseHint($('hint-temp'), 'temp')) return;
+  playRun.tempOn = true;
+  $('play-status').textContent = '온도계 켜짐! 이제 누를 때마다 온도를 알려줘요';
+}
+function mdTempFeedback(nx, ny){
+  const i = mdNearestUnfoundIndex();
+  if (i === -1) return;
+  const d = playStage.dolls[i];
+  const dist = Math.hypot((nx - d.x) * state.photoW, (ny - d.y) * state.photoH) / minSide();
+  for (const step of CONFIG.TEMP_STEPS){
+    if (dist <= step.max){
+      $('play-status').textContent = step.msg;
+      if (navigator.vibrate) navigator.vibrate(step.vib);
+      return;
+    }
+  }
+}
+function mdHintFlash(){
+  if (!mdUseHint($('hint-flash'), 'flash')) return;
+  const i = mdNearestUnfoundIndex();
+  if (i === -1) return;
+  const d = playStage.dolls[i];
+  const s = mdDollSize(d);
+  const k = s / CONFIG.DOLL_SIZE;
+  pctx2d.save();
+  pctx2d.translate(d.x * state.photoW, d.y * state.photoH);
+  pctx2d.rotate(d.rotation * Math.PI / 180);
+  if (d.flip) pctx2d.scale(-1, 1);
+  pctx2d.scale(k, k);
+  pctx2d.translate(-CONFIG.DOLL_SIZE / 2, -CONFIG.DOLL_SIZE / 2);
+  pctx2d.lineWidth = 7 / k;
+  pctx2d.strokeStyle = '#E45B5B';
+  pctx2d.lineJoin = 'round';
+  pctx2d.stroke(dollPath);
+  pctx2d.restore();
+  setTimeout(renderStage, CONFIG.FLASH_MS);
+}
 
 /* ---------- 사진 스테이지 입력 ---------- */
 photoCanvas.addEventListener('pointerdown', (e) => {
@@ -1396,7 +1514,21 @@ photoCanvas.addEventListener('pointerdown', (e) => {
   } else if (state.phase === 'play'){
     if (!playRun || playRun.ended) return;
     playRun.taps.push({ x: Math.round(p.nx * 1000) / 1000, y: Math.round(p.ny * 1000) / 1000 });
-    if (hitTest(p.nx, p.ny)){
+    if (playStage.dolls){
+      const idx = mdHitTestIndex(playStage.dolls, playFoundFlags, p.nx, p.ny);
+      if (idx !== -1){
+        playFoundFlags[idx] = true;
+        renderStage();
+        mdSpawnFoundDoll(playStage.dolls[idx], remoteDollImgs[idx]);
+        if (navigator.vibrate) navigator.vibrate(80);
+        const foundCount = playFoundFlags.filter(Boolean).length;
+        $('play-status').textContent = foundCount + '/' + playStage.dolls.length + ' 찾음';
+        if (mdAllFound(playFoundFlags)) finishPlay(true);
+      } else {
+        spawnRipple(p.cssX, p.cssY);
+        if (playRun.tempOn) mdTempFeedback(p.nx, p.ny);
+      }
+    } else if (hitTest(p.nx, p.ny)){
       finishPlay(true);
     } else {
       spawnRipple(p.cssX, p.cssY);
@@ -1526,6 +1658,18 @@ async function fetchStage(id){
   const snap = await ref.get();
   if (!snap.exists) return null;
   const d = snap.data();
+  if (d.dolls){
+    const [photoImg, ...dollImgs] = await Promise.all(
+      [loadImg(d.photoB64)].concat(d.dolls.map((dl) => loadImg(dl.dollB64)))
+    );
+    remoteDollImgs = dollImgs;
+    const { w, h } = fitSize(photoImg.naturalWidth, photoImg.naturalHeight, CONFIG.PHOTO_MAX);
+    photoBuf.width = w; photoBuf.height = h;
+    bufCtx.drawImage(photoImg, 0, 0, w, h);
+    state.photoW = w; state.photoH = h;
+    photoCanvas.width = w; photoCanvas.height = h;
+    return { ref, data: d };
+  }
   const [photoImg, dollImg] = await Promise.all([loadImg(d.photoB64), loadImg(d.dollB64)]);
   remoteDollImg = dollImg;
   const { w, h } = fitSize(photoImg.naturalWidth, photoImg.naturalHeight, CONFIG.PHOTO_MAX);
@@ -1541,12 +1685,20 @@ async function loadStage(id){
   try {
     const got = await fetchStage(id);
     if (!got){ showError('링크가 틀렸거나, 만든 사람이 지웠을 수 있어요.'); return; }
-    playStage = {
-      id, ref: got.ref, doll: got.data.doll,
-      timeLimit: got.data.timeLimit || CONFIG.TIME_LIMIT,
-      stats: got.data.stats || { plays: 0, clears: 0, totalClearMs: 0 },
-      eyedropperUses: got.data.eyedropperUses || 0,
-    };
+    if (got.data.dolls){
+      playStage = {
+        id, ref: got.ref, dolls: got.data.dolls,
+        timeLimit: got.data.timeLimit || CONFIG.TIME_LIMIT,
+        stats: got.data.stats || { plays: 0, clears: 0, totalClearMs: 0 },
+      };
+    } else {
+      playStage = {
+        id, ref: got.ref, doll: got.data.doll,
+        timeLimit: got.data.timeLimit || CONFIG.TIME_LIMIT,
+        stats: got.data.stats || { plays: 0, clears: 0, totalClearMs: 0 },
+        eyedropperUses: got.data.eyedropperUses || 0,
+      };
+    }
     startCountdown();
   } catch(e){
     console.warn('스테이지 로드 실패:', e);
@@ -1556,6 +1708,7 @@ async function loadStage(id){
 function startCountdown(){
   setPhase('ready');
   state.found = false; state.reveal = false;
+  playFoundFlags = playStage.dolls ? playStage.dolls.map(() => false) : null;
   clearOverlay();
   photoCanvas.classList.add('blurred');
   ['hint-quad', 'hint-temp', 'hint-flash'].forEach((id) => { $(id).disabled = false; });
@@ -1622,11 +1775,12 @@ function finishPlay(cleared){
     clears: playStage.stats.clears + (cleared ? 1 : 0),
     totalClearMs: playStage.stats.totalClearMs + (cleared ? Math.round(performance.now() - playRun.start) : 0),
   };
+  const eyedropperUsed = playStage.dolls ? mdAnyEyedropperUsed(playStage.dolls) : playStage.eyedropperUses > 0;
   if (cleared){
     playRun.clearMs = Math.round(performance.now() - playRun.start);
     state.found = true;
     renderStage();
-    spawnFoundDoll();
+    if (!playStage.dolls) spawnFoundDoll(); // 다중 인형은 각자 찾을 때 이미 연출됨
     if (navigator.vibrate) navigator.vibrate([60, 40, 120]);
     $('playend-title').textContent = '찾았다! 🎉';
     $('playend-sub').textContent = '';
@@ -1636,7 +1790,7 @@ function finishPlay(cleared){
   } else {
     state.reveal = true;
     renderStage();
-    spawnRevealRing();
+    if (playStage.dolls) mdSpawnRevealRings(); else spawnRevealRing();
     $('playend-title').textContent = '시간 종료! ⏰';
     $('playend-sub').textContent = '인형은 반짝이는 곳에 숨어 있었어요. 다음엔 찾을 수 있어!';
     $('result-time').textContent = '찾지 못했다…';
@@ -1645,10 +1799,10 @@ function finishPlay(cleared){
   $('result-hints').textContent = playRun.hints
     ? '사용한 힌트 ' + '★'.repeat(playRun.hints)
     : '힌트 없이 도전!';
-  const grade = computeGrade(statsNow, tl, playStage.eyedropperUses);
+  const grade = computeGrade(statsNow, tl, eyedropperUsed ? 1 : 0);
   $('grade-letter').textContent = grade.g;
   $('grade-msg').textContent = grade.msg;
-  $('eyedropper-badge').classList.toggle('hidden', !(playStage.eyedropperUses > 0));
+  $('eyedropper-badge').classList.toggle('hidden', !eyedropperUsed);
   playRun.grade = grade;
   setPhase('end');
   recordResult();
@@ -2141,9 +2295,9 @@ $('btn-play-home').addEventListener('click', goHomeClean);
 $('btn-result-home').addEventListener('click', goHomeClean);
 $('btn-error-home').addEventListener('click', goHomeClean);
 $('btn-share-card').addEventListener('click', shareCard);
-$('hint-quad').addEventListener('click', hintQuadrant);
-$('hint-temp').addEventListener('click', hintTemp);
-$('hint-flash').addEventListener('click', hintFlash);
+$('hint-quad').addEventListener('click', () => { (playStage && playStage.dolls ? mdHintQuadrant : hintQuadrant)(); });
+$('hint-temp').addEventListener('click', () => { (playStage && playStage.dolls ? mdHintTemp : hintTemp)(); });
+$('hint-flash').addEventListener('click', () => { (playStage && playStage.dolls ? mdHintFlash : hintFlash)(); });
 
 /* ---------- 초기화 ---------- */
 function resetAll(){
