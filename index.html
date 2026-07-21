@@ -93,6 +93,7 @@ h1,h2,h3{ margin:0; font-weight:700; }
 .g-thumb img{ width:100%; height:100%; object-fit:cover; filter:blur(12px) saturate(1.1); transform:scale(1.15); }
 .g-meta{ display:flex; align-items:center; justify-content:space-between; padding:6px 10px; font-size:16px; }
 .g-grade{ font-weight:700; color:var(--accent); font-size:20px; }
+.g-count{ font-size:13px; color:var(--pencil-soft); }
 #gallery-loading{ text-align:center; color:var(--pencil-soft); font-size:16px; }
 
 /* ---------- 제작·플레이 화면 공통 ---------- */
@@ -1946,16 +1947,21 @@ async function loadResultView(id){
     const got = await fetchStage(id);
     if (!got){ showError('링크가 틀렸거나, 만든 사람이 지웠을 수 있어요.'); return; }
     const d = got.data;
-    playStage = { id, ref: got.ref, doll: d.doll, timeLimit: d.timeLimit || CONFIG.TIME_LIMIT, stats: d.stats, eyedropperUses: d.eyedropperUses || 0 };
+    if (d.dolls){
+      playStage = { id, ref: got.ref, dolls: d.dolls, timeLimit: d.timeLimit || CONFIG.TIME_LIMIT, stats: d.stats };
+    } else {
+      playStage = { id, ref: got.ref, doll: d.doll, timeLimit: d.timeLimit || CONFIG.TIME_LIMIT, stats: d.stats, eyedropperUses: d.eyedropperUses || 0 };
+    }
     resultTaps = d.taps || [];
     const st = d.stats || { plays: 0, clears: 0, totalClearMs: 0 };
     $('rv-plays').textContent = st.plays;
     $('rv-clears').textContent = st.clears;
     $('rv-avg').textContent = st.clears ? (st.totalClearMs / st.clears / 1000).toFixed(1) + '초' : '--';
-    const grade = computeGrade(st, playStage.timeLimit, playStage.eyedropperUses);
+    const eyedropperUsed = playStage.dolls ? mdAnyEyedropperUsed(playStage.dolls) : playStage.eyedropperUses > 0;
+    const grade = computeGrade(st, playStage.timeLimit, eyedropperUsed ? 1 : 0);
     $('rv-grade').textContent = grade.g;
     $('rv-grade-msg').textContent = grade.msg;
-    $('rv-eyedropper-badge').classList.toggle('hidden', !(playStage.eyedropperUses > 0));
+    $('rv-eyedropper-badge').classList.toggle('hidden', !eyedropperUsed);
     setPhase('view');
   } catch(e){
     console.warn('결과 보기 실패:', e);
@@ -1982,7 +1988,9 @@ async function renderGallery(){
       const snap = await fb.db.collection('stages').doc(id).get();
       if (!snap.exists) continue;
       const d = snap.data();
-      const grade = computeGrade(d.stats, d.timeLimit || CONFIG.TIME_LIMIT, d.eyedropperUses);
+      const eyedropperUsed = d.dolls ? mdAnyEyedropperUsed(d.dolls) : d.eyedropperUses > 0;
+      const grade = computeGrade(d.stats, d.timeLimit || CONFIG.TIME_LIMIT, eyedropperUsed ? 1 : 0);
+      const dollCount = d.dolls ? d.dolls.length : 1;
       const card = document.createElement('button');
       card.className = 'g-card';
       card.setAttribute('aria-label', '예제 스테이지 플레이');
@@ -1990,6 +1998,7 @@ async function renderGallery(){
       card.innerHTML =
         '<div class="g-thumb"><img alt="" loading="lazy"></div>' +
         '<div class="g-meta"><span>도전 ' + (d.stats ? d.stats.plays : 0) + '</span>' +
+        (dollCount > 1 ? '<span class="g-count">🧍×' + dollCount + '</span>' : '') +
         '<span class="g-grade">' + grade.g + '</span></div>';
       card.querySelector('img').src = d.photoB64;
       card.addEventListener('click', () => {
