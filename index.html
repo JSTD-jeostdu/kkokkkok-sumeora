@@ -193,6 +193,50 @@ h1,h2,h3{ margin:0; font-weight:700; }
 #zoom-canvas-slot{ display:flex; justify-content:center; }
 .zoom-modal .doll-view-wrap{ width:min(90vw, 58vh); height:min(90vw, 58vh); }
 #zoom-tools-slot{ width:100%; max-width:360px; }
+/* ---------- 컬러피커 모달 ---------- */
+.cp-modal{
+  position:fixed; inset:0; z-index:60;
+  background:rgba(74,74,74,.45);
+  display:flex; align-items:center; justify-content:center; padding:16px;
+}
+.cp-card{
+  background:var(--paper); border:2.5px dashed var(--pencil-soft); border-radius:18px;
+  box-shadow:var(--shadow); padding:16px; width:100%; max-width:300px;
+}
+.cp-header{ display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; font-size:19px; font-weight:700; }
+.cp-header button{
+  font-family:inherit; font-size:18px; border:2px solid var(--pencil); border-radius:50%;
+  width:36px; height:36px; background:#fff; cursor:pointer;
+}
+.cp-header button:focus-visible{ outline:3px solid var(--accent); outline-offset:2px; }
+.cp-svbox-wrap{ position:relative; width:100%; aspect-ratio:1; touch-action:none; }
+#cp-svbox{ width:100%; height:100%; display:block; border-radius:10px; }
+#cp-sv-thumb{
+  position:absolute; width:16px; height:16px; border-radius:50%;
+  border:3px solid #fff; box-shadow:0 0 0 1.5px var(--pencil), var(--shadow);
+  transform:translate(-50%,-50%); pointer-events:none;
+}
+#cp-hue-track{
+  position:relative; height:28px; border-radius:14px; margin:14px 0 10px;
+  background:linear-gradient(to right, #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%);
+  touch-action:none;
+}
+#cp-hue-thumb{
+  position:absolute; top:-3px; width:6px; height:34px; border-radius:3px;
+  background:#fff; border:2px solid var(--pencil); box-shadow:var(--shadow);
+  transform:translateX(-3px); pointer-events:none;
+}
+.cp-preview-row{ display:flex; gap:10px; align-items:center; margin-bottom:12px; }
+#cp-preview{
+  width:44px; height:44px; border-radius:50%; border:3px solid #fff;
+  box-shadow:0 0 0 2px var(--pencil), var(--shadow); flex:0 0 auto;
+}
+#cp-hex{
+  flex:1; min-width:0; font-family:inherit; font-size:18px; text-transform:uppercase;
+  border:2px solid var(--pencil-soft); border-radius:10px; padding:8px 10px; background:#fff; color:var(--pencil);
+}
+#cp-hex:focus-visible{ outline:3px solid var(--accent); outline-offset:2px; }
+#swatch{ cursor:pointer; }
 .panel-actions{ display:flex; gap:10px; margin-top:14px; }
 .panel-actions .btn{ flex:1; font-size:19px; }
 
@@ -492,6 +536,28 @@ h1,h2,h3{ margin:0; font-weight:700; }
     <button id="btn-zoom-close" aria-label="확대 닫기">✕</button>
     <div id="zoom-canvas-slot"></div>
     <div id="zoom-tools-slot"></div>
+  </div>
+
+  <!-- 컬러피커 모달: SV박스 + Hue막대 + HEX 입력 -->
+  <div id="colorpicker-modal" class="cp-modal hidden" role="dialog" aria-modal="true" aria-label="색상 선택">
+    <div class="cp-card">
+      <div class="cp-header">
+        <span>색상 선택</span>
+        <button id="btn-cp-close" aria-label="색상 선택 닫기">✕</button>
+      </div>
+      <div class="cp-svbox-wrap">
+        <canvas id="cp-svbox" width="240" height="240" aria-label="채도·명도 선택"></canvas>
+        <div id="cp-sv-thumb"></div>
+      </div>
+      <div id="cp-hue-track" aria-label="색상(Hue) 선택">
+        <div id="cp-hue-thumb"></div>
+      </div>
+      <div class="cp-preview-row">
+        <div id="cp-preview"></div>
+        <input type="text" id="cp-hex" maxlength="7" aria-label="HEX 코드 입력" placeholder="#RRGGBB">
+      </div>
+      <button class="btn btn-primary btn-wide" id="btn-cp-confirm">확인</button>
+    </div>
   </div>
 </main>
 
@@ -979,6 +1045,38 @@ function stagePos(e){
            cssX: e.clientX - r.left, cssY: e.clientY - r.top };
 }
 function toHex(n){ return n.toString(16).padStart(2, '0'); }
+
+/* ---------- 컬러피커: HSV<->RGB<->HEX 변환 ---------- */
+function hsvToRgb(h, s, v){
+  s /= 100; v /= 100;
+  const c = v * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = v - c;
+  let r, g, b;
+  if (h < 60) [r, g, b] = [c, x, 0];
+  else if (h < 120) [r, g, b] = [x, c, 0];
+  else if (h < 180) [r, g, b] = [0, c, x];
+  else if (h < 240) [r, g, b] = [0, x, c];
+  else if (h < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  return { r: Math.round((r + m) * 255), g: Math.round((g + m) * 255), b: Math.round((b + m) * 255) };
+}
+function rgbToHex(r, g, b){ return '#' + [r, g, b].map((n) => toHex(n)).join(''); }
+function hsvToHex(h, s, v){ const { r, g, b } = hsvToRgb(h, s, v); return rgbToHex(r, g, b); }
+function hexToRgb(hex){
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return m ? { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) } : null;
+}
+function rgbToHsv(r, g, b){
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  let h = 0;
+  if (d !== 0){
+    if (max === r) h = 60 * (((g - b) / d) % 6);
+    else if (max === g) h = 60 * ((b - r) / d + 2);
+    else h = 60 * ((r - g) / d + 4);
+  }
+  if (h < 0) h += 360;
+  return { h, s: max === 0 ? 0 : (d / max) * 100, v: max * 100 };
+}
 
 /* ---------- 배치 드래그 ---------- */
 let dragging = false;
