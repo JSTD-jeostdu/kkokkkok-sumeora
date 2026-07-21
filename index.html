@@ -403,6 +403,10 @@ h1,h2,h3{ margin:0; font-weight:700; }
           </div>
         </div>
       </div>
+      <p class="hint-line hidden" id="paint-doll-progress"></p>
+      <div class="panel-actions hidden" id="paint-add-doll-row">
+        <button class="btn btn-ghost btn-wide" id="btn-add-doll-paint">+ 인형 추가</button>
+      </div>
       <div class="panel-actions">
         <button class="btn btn-ghost" id="btn-repick">사진 바꾸기</button>
         <button class="btn btn-ghost" id="btn-to-place">다시 배치</button>
@@ -898,6 +902,7 @@ function setPhase(phase){
   if (phase === 'paint'){
     captureBgCrop();
     renderDollView();
+    updatePaintAddDollUI();
   }
   renderStage();
 }
@@ -1180,6 +1185,7 @@ function selectDollTab(i){
   renderDollTabs();
   renderDollView();
   renderStage();
+  updatePaintAddDollUI();
 }
 function addDoll(){
   if (state.dolls.length >= CONFIG.MAX_DOLLS) return;
@@ -1195,6 +1201,19 @@ function deleteDollTab(i){
   dollSets.splice(i, 1);
   const newIndex = Math.min(i, state.dolls.length - 1);
   selectDollTab(newIndex);
+}
+
+/* ---------- 색칠: 인형 추가 UI 갱신 ---------- */
+function updatePaintAddDollUI(){
+  const canAdd = state.dolls.length < CONFIG.MAX_DOLLS;
+  $('paint-add-doll-row').classList.toggle('hidden', !canAdd);
+  const progress = $('paint-doll-progress');
+  if (state.dolls.length > 1){
+    progress.textContent = '인형 ' + (state.activeDollIndex + 1) + '/' + state.dolls.length + ' 색칠 중';
+    progress.classList.remove('hidden');
+  } else {
+    progress.classList.add('hidden');
+  }
 }
 
 /* ---------- 배치 드래그 ---------- */
@@ -1852,6 +1871,7 @@ $('btn-eyedropper').addEventListener('click', () => {
   eyedropperOn = !eyedropperOn;
   $('btn-eyedropper').setAttribute('aria-pressed', String(eyedropperOn));
 });
+$('btn-add-doll-paint').addEventListener('click', addDoll);
 
 /* ---------- 컬러피커 ---------- */
 const cpState = { h: 0, s: 0, v: 0 };
