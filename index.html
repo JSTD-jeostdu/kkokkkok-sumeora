@@ -292,6 +292,20 @@ h1,h2,h3{ margin:0; font-weight:700; }
 .grade-msg{ text-align:center; font-size:17px; color:var(--pencil-soft); margin:2px 0 6px; }
 .eyedropper-badge{ text-align:center; font-size:15px; color:var(--pencil-soft); margin:0 0 6px; }
 
+/* ---------- 스포이드 확대 루페 ---------- */
+.loupe{ position:fixed; z-index:60; pointer-events:none; transform:translate(-50%,-100%); }
+.loupe canvas{ border-radius:50%; border:3px solid var(--pencil); box-shadow:var(--shadow); image-rendering:pixelated; display:block; }
+.loupe .swatch-row{ display:flex; align-items:center; justify-content:center; gap:6px; margin-top:4px; }
+.loupe .swatch-dot{ width:18px; height:18px; border-radius:50%; border:2px solid #fff; box-shadow:0 0 0 1px var(--pencil-soft); }
+.loupe .hex-label{ font-size:13px; color:var(--pencil); background:#fff; padding:1px 6px; border-radius:8px; }
+
+/* ---------- 결과 화면: 제작자 종이인형 원본 공개 ---------- */
+.doll-reveal-row{ display:flex; gap:10px; overflow-x:auto; padding:6px 2px 10px; }
+.doll-reveal-card{ flex:0 0 auto; width:88px; height:88px; background:var(--paper);
+  border:2px dashed var(--pencil-soft); border-radius:12px;
+  display:flex; align-items:center; justify-content:center; }
+.doll-reveal-card img{ width:72px; height:72px; object-fit:contain; }
+
 /* ---------- 제작자 결과 보기 (Stage 3) ---------- */
 .stat-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:8px 0; }
 .stat-cell{ background:#fff; border:2px dashed var(--pencil-soft); border-radius:10px;
@@ -489,6 +503,8 @@ h1,h2,h3{ margin:0; font-weight:700; }
       </div>
       <div id="gauge-wrap" title="남은 시간"><div id="gauge" style="width:0%"></div></div>
       <p class="grade-msg" id="grade-msg"></p>
+      <p class="hint-line">제작자가 만든 종이인형</p>
+      <div class="doll-reveal-row" id="doll-reveal-row"></div>
       <p class="eyedropper-badge hidden" id="eyedropper-badge">🧪 스포이드 사용됨</p>
       <div class="panel-actions">
         <button class="btn" id="btn-share-card">결과 카드 공유</button>
@@ -544,6 +560,15 @@ h1,h2,h3{ margin:0; font-weight:700; }
     <button id="btn-zoom-close" aria-label="확대 닫기">✕</button>
     <div id="zoom-canvas-slot"></div>
     <div id="zoom-tools-slot"></div>
+  </div>
+
+  <!-- 스포이드 확대 루페: 색칠 단계에서 스포이드 드래그 중에만 표시 -->
+  <div id="loupe" class="loupe hidden" aria-hidden="true">
+    <canvas id="loupe-canvas" width="112" height="112"></canvas>
+    <div class="swatch-row">
+      <div class="swatch-dot" id="loupe-swatch"></div>
+      <span class="hex-label" id="loupe-hex"></span>
+    </div>
   </div>
 
   <!-- 컬러피커 모달: SV박스 + Hue막대 + HEX 입력 -->
@@ -739,6 +764,22 @@ function setActiveDollIndex(i){
 }
 setActiveDollIndex(0);
 function activeEditDoll(){ return state.dolls[state.activeDollIndex]; }
+/* 플레이 종료 후 결과 화면에 제작자가 만든 종이인형 원본을 그대로 노출한다.
+   dollB64/remoteDollImg(s)는 투명 배경의 인형만 담고 있어(사진과 별도 레이어) 그대로 표시해도 무방하다. */
+function renderDollReveal(){
+  const imgs = playStage.dolls ? remoteDollImgs : [remoteDollImg];
+  const row = $('doll-reveal-row');
+  row.innerHTML = '';
+  imgs.forEach((img) => {
+    const card = document.createElement('div');
+    card.className = 'doll-reveal-card';
+    const el = document.createElement('img');
+    el.src = img.src;
+    el.alt = '제작자가 만든 종이인형';
+    card.appendChild(el);
+    row.appendChild(card);
+  });
+}
 
 /* ---------- 인형 실루엣 경로 ---------- */
 function addRoundRect(p, x, y, w, h, r){
@@ -1068,6 +1109,39 @@ function undo(){
 /* ---------- 색칠: 브러시 ---------- */
 let painting = false, lastPt = null;
 let eyedropperOn = false;
+let eyedropperDragging = false;
+let eyedropperLastInside = false;
+let lastLoupeView = null; // 마지막 포인터 이벤트의 viewPos(e) 결과 — 확정 시 pickColorFromCrop에 그대로 전달
+const LOUPE_ZOOM_CELL = 22; // bgCropCanvas에서 읽어올 정사각형 한 변 길이(px)
+const loupeEl = $('loupe'), loupeCanvas = $('loupe-canvas'), loupeCtx = loupeCanvas.getContext('2d');
+loupeCtx.imageSmoothingEnabled = false;
+/* v: viewPos(e) 결과(dollView 0~256 좌표계). e: 원본 포인터 이벤트(clientX/Y는 뷰포트 절대 좌표 — 루페 위치 계산용). */
+function updateLoupe(v, e){
+  lastLoupeView = v;
+  const { x: vx, y: vy } = v;
+  const inside = vx >= 0 && vx < CONFIG.DOLL_SIZE && vy >= 0 && vy < CONFIG.DOLL_SIZE;
+  eyedropperLastInside = inside;
+  const px = Math.min(CONFIG.DOLL_SIZE - 1, Math.max(0, Math.floor(vx)));
+  const py = Math.min(CONFIG.DOLL_SIZE - 1, Math.max(0, Math.floor(vy)));
+  const half = LOUPE_ZOOM_CELL / 2;
+  const size = loupeCanvas.width; // 112
+  loupeCtx.clearRect(0, 0, size, size);
+  loupeCtx.save();
+  loupeCtx.beginPath(); loupeCtx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2); loupeCtx.clip();
+  loupeCtx.drawImage(bgCropCanvas, px - half, py - half, LOUPE_ZOOM_CELL, LOUPE_ZOOM_CELL, 0, 0, size, size);
+  loupeCtx.restore();
+  // 중앙 크로스헤어(캔버스 정중앙 1픽셀 셀 강조) — 캔버스 밖이면 빨간색으로 취소 표시
+  const cell = size / LOUPE_ZOOM_CELL;
+  loupeCtx.strokeStyle = inside ? '#4A4A4A' : '#E45B5B';
+  loupeCtx.lineWidth = 2;
+  loupeCtx.strokeRect(size / 2 - cell / 2, size / 2 - cell / 2, cell, cell);
+  const d = bgCropCtx.getImageData(px, py, 1, 1).data;
+  const hex = '#' + toHex(d[0]) + toHex(d[1]) + toHex(d[2]);
+  $('loupe-swatch').style.background = hex;
+  $('loupe-hex').textContent = inside ? hex : '취소';
+  loupeEl.style.left = e.clientX + 'px';
+  loupeEl.style.top = (e.clientY - 90) + 'px';
+}
 /* dollView 화면(0~256) 좌표 — 배경은 무회전이라 이 좌표를 그대로 쓴다 */
 function viewPos(e){
   const r = dollView.getBoundingClientRect();
@@ -1150,8 +1224,10 @@ dollView.addEventListener('pointerdown', (e) => {
   if (state.phase !== 'paint') return;
   e.preventDefault();
   if (eyedropperOn){
-    const v = viewPos(e);
-    pickColorFromCrop(v.x, v.y, v.cssX, v.cssY);
+    dollView.setPointerCapture(e.pointerId);
+    eyedropperDragging = true;
+    loupeEl.classList.remove('hidden');
+    updateLoupe(viewPos(e), e);
     return;
   }
   dollView.setPointerCapture(e.pointerId);
@@ -1163,14 +1239,33 @@ dollView.addEventListener('pointerdown', (e) => {
   renderDollView();
 });
 dollView.addEventListener('pointermove', (e) => {
+  if (eyedropperDragging){
+    updateLoupe(viewPos(e), e);
+    return;
+  }
   if (!painting) return;
   const pt = dollPos(e);
   strokeSegment(lastPt, pt);
   lastPt = pt;
   renderDollView();
 });
-dollView.addEventListener('pointerup', endStroke);
-dollView.addEventListener('pointercancel', endStroke);
+/* 스포이드 드래그 종료: 캔버스 안에서 손을 뗀 경우만 확정, 밖/취소 시엔 그냥 숨김(사용 횟수 소모 없음) */
+function endEyedropperDrag(commit){
+  eyedropperDragging = false;
+  loupeEl.classList.add('hidden');
+  if (commit && eyedropperLastInside){
+    const v = lastLoupeView;
+    pickColorFromCrop(v.x, v.y, v.cssX, v.cssY);
+  }
+}
+dollView.addEventListener('pointerup', (e) => {
+  if (eyedropperDragging){ endEyedropperDrag(true); return; }
+  endStroke();
+});
+dollView.addEventListener('pointercancel', (e) => {
+  if (eyedropperDragging){ endEyedropperDrag(false); return; }
+  endStroke();
+});
 
 /* ---------- 스포이드 ---------- */
 function stagePos(e){
@@ -1804,6 +1899,7 @@ function finishPlay(cleared){
   $('grade-letter').textContent = grade.g;
   $('grade-msg').textContent = grade.msg;
   $('eyedropper-badge').classList.toggle('hidden', !eyedropperUsed);
+  renderDollReveal();
   playRun.grade = grade;
   setPhase('end');
   recordResult();
