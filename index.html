@@ -317,6 +317,17 @@ h1,h2,h3{ margin:0; font-weight:700; }
 .grade-msg{ text-align:center; font-size:17px; color:var(--pencil-soft); margin:2px 0 6px; }
 .eyedropper-badge{ text-align:center; font-size:15px; color:var(--pencil-soft); margin:0 0 6px; }
 
+/* ---------- 이어달리기 체인 CTA ---------- */
+.relay-hook{ text-align:center; font-size:19px; margin:14px 0 6px; }
+.relay-hook b{ color:var(--accent); }
+.relay-cta{ font-size:22px; padding:13px 0; animation:relayPulse 2.2s ease-in-out infinite; }
+@keyframes relayPulse{
+  0%,100%{ box-shadow:var(--shadow); }
+  50%{ box-shadow:0 4px 22px rgba(228,91,91,.45); }
+}
+.panel-links-row{ display:flex; justify-content:center; gap:4px; margin-top:4px; }
+.panel-links-row .link-btn{ margin:0; }
+
 /* ---------- 스포이드 확대 루페 ---------- */
 .loupe{ position:fixed; z-index:60; pointer-events:none; transform:translate(-50%,-100%); }
 .loupe canvas{ border-radius:50%; border:3px solid var(--pencil); box-shadow:var(--shadow); image-rendering:pixelated; display:block; }
@@ -531,14 +542,15 @@ h1,h2,h3{ margin:0; font-weight:700; }
       <p class="hint-line">제작자가 만든 종이인형</p>
       <div class="doll-reveal-row" id="doll-reveal-row"></div>
       <p class="eyedropper-badge hidden" id="eyedropper-badge">🧪 스포이드 사용됨</p>
-      <div class="panel-actions">
-        <button class="btn" id="btn-share-card">결과 카드 공유</button>
-        <button class="btn btn-primary" id="btn-play-make">나도 숨기기</button>
-      </div>
+      <p class="relay-hook">이번엔 당신 차례예요.<br>친구를 <b>제대로</b> 골탕먹여보세요 😏</p>
+      <button class="btn btn-primary btn-wide relay-cta" id="btn-play-make">나도 숨기기</button>
       <div class="panel-actions" style="margin-top:8px;">
         <button class="btn btn-ghost" id="btn-play-home">홈으로</button>
       </div>
-      <button class="link-btn" id="btn-open-delete-play">스테이지 삭제</button>
+      <div class="panel-links-row">
+        <button class="link-btn" id="btn-share-card">결과 카드 공유</button>
+        <button class="link-btn" id="btn-open-delete-play">스테이지 삭제</button>
+      </div>
     </div>
 
     <!-- 제작자 결과 보기 (Stage 3) -->
