@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "stages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isPublic", "order": "ASCENDING" },
+        { "fieldPath": "stats.plays", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
