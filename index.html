@@ -462,6 +462,7 @@ h1,h2,h3{ margin:0; font-weight:700; }
         <button class="btn btn-ghost" id="btn-repick">사진 바꾸기</button>
         <button class="btn btn-ghost" id="btn-to-place">다시 배치</button>
       </div>
+      <button class="tool-btn btn-wide" id="btn-toggle-public" aria-pressed="false">🔒 이 스테이지를 공개 갤러리에 올리기</button>
       <div class="panel-actions">
         <button class="btn btn-ghost" id="btn-to-test">테스트 플레이</button>
         <button class="btn btn-primary" id="btn-save">저장하고 공유하기</button>
@@ -720,6 +721,7 @@ const state = {
   savedId: null,
   deleteTargetId: null,
   deleteReturnPhase: 'home',
+  isPublic: false,          // 공개 갤러리 노출 여부 — 생성 시점에만 설정, 기본 비공개
 };
 
 let playStage = null;    // { id, ref, doll, timeLimit, stats }
@@ -1738,6 +1740,7 @@ async function saveStage(){
       deleteKeyHash,
       stats: { plays: 0, clears: 0, totalClearMs: 0 },
       taps: [],
+      isPublic: state.isPublic,
     });
 
     state.savedId = id;
@@ -2378,6 +2381,13 @@ $('btn-flip').addEventListener('click', () => {
   $('btn-flip').setAttribute('aria-pressed', String(activeEditDoll().flip));
   renderStage();
 });
+$('btn-toggle-public').addEventListener('click', () => {
+  state.isPublic = !state.isPublic;
+  $('btn-toggle-public').setAttribute('aria-pressed', String(state.isPublic));
+  $('btn-toggle-public').textContent = state.isPublic
+    ? '🌍 이 스테이지를 공개 갤러리에 올리기'
+    : '🔒 이 스테이지를 공개 갤러리에 올리기';
+});
 
 /* ---------- 화면 이동 배선 ---------- */
 function stopTimers(){
@@ -2451,6 +2461,9 @@ function resetAll(){
   state.found = false;
   state.reveal = false;
   state.savedId = null;
+  state.isPublic = false;
+  $('btn-toggle-public').setAttribute('aria-pressed', 'false');
+  $('btn-toggle-public').textContent = '🔒 이 스테이지를 공개 갤러리에 올리기';
   eyedropperOn = false;
   playStage = null;
   remoteDollImg = null;
