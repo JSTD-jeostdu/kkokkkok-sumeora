@@ -120,6 +120,10 @@ h1,h2,h3{ margin:0; font-weight:700; }
 .g-grade{ font-weight:700; color:var(--accent); font-size:20px; }
 .g-count{ font-size:13px; color:var(--pencil-soft); }
 #gallery-loading{ text-align:center; color:var(--pencil-soft); font-size:16px; }
+#public-gallery{ width:100%; text-align:left; margin-top:16px; }
+#public-gallery h3{ margin-bottom:10px; }
+#public-gallery-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+#public-gallery-loading{ text-align:center; color:var(--pencil-soft); font-size:16px; }
 
 /* ---------- 제작·플레이 화면 공통 ---------- */
 .topbar{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
@@ -381,6 +385,12 @@ h1,h2,h3{ margin:0; font-weight:700; }
       <h3>예제 스테이지 🎯</h3>
       <p id="gallery-loading">불러오는 중…</p>
       <div id="gallery-grid"></div>
+    </div>
+    <!-- 공개 갤러리: 결과 0개면 통째로 숨겨짐 -->
+    <div id="public-gallery" class="cut-card hidden">
+      <h3>다른 사람들이 숨긴 스테이지 🌍</h3>
+      <p id="public-gallery-loading">불러오는 중…</p>
+      <div id="public-gallery-grid"></div>
     </div>
   </section>
 
@@ -2108,6 +2118,28 @@ async function loadResultView(id){
 /* ==========================================================
    Stage 3 — 홈 예제 갤러리 (CONFIG.EXAMPLE_STAGES 기반)
    ========================================================== */
+// 갤러리 카드 하나 생성 (예제 갤러리·공개 갤러리 공용)
+function buildStageCard(id, d){
+  const eyedropperUsed = d.dolls ? mdAnyEyedropperUsed(d.dolls) : d.eyedropperUses > 0;
+  const grade = computeGrade(d.stats, d.timeLimit || CONFIG.TIME_LIMIT, eyedropperUsed ? 1 : 0);
+  const dollCount = d.dolls ? d.dolls.length : 1;
+  const card = document.createElement('button');
+  card.className = 'g-card';
+  card.setAttribute('aria-label', '스테이지 플레이');
+  // 썸네일은 강한 블러 처리 — 정답 위치·사진 내용 노출 방지
+  card.innerHTML =
+    '<div class="g-thumb"><img alt="" loading="lazy"></div>' +
+    '<div class="g-meta"><span>도전 ' + (d.stats ? d.stats.plays : 0) + '</span>' +
+    (dollCount > 1 ? '<span class="g-count">🧍×' + dollCount + '</span>' : '') +
+    '<span class="g-grade">' + grade.g + '</span></div>';
+  card.querySelector('img').src = d.photoB64;
+  card.addEventListener('click', () => {
+    // 새 URL로 이동해 플레이 (라우팅 로직 재사용, 뒤로 가기도 자연스럽다)
+    location.href = location.pathname + '?s=' + id;
+  });
+  return card;
+}
+
 async function renderGallery(){
   const ids = CONFIG.EXAMPLE_STAGES;
   if (!ids || !ids.length) return;         // 비어 있으면 갤러리 숨김 유지
@@ -2123,25 +2155,7 @@ async function renderGallery(){
     try {
       const snap = await fb.db.collection('stages').doc(id).get();
       if (!snap.exists) continue;
-      const d = snap.data();
-      const eyedropperUsed = d.dolls ? mdAnyEyedropperUsed(d.dolls) : d.eyedropperUses > 0;
-      const grade = computeGrade(d.stats, d.timeLimit || CONFIG.TIME_LIMIT, eyedropperUsed ? 1 : 0);
-      const dollCount = d.dolls ? d.dolls.length : 1;
-      const card = document.createElement('button');
-      card.className = 'g-card';
-      card.setAttribute('aria-label', '예제 스테이지 플레이');
-      // 썸네일은 강한 블러 처리 — 정답 위치·사진 내용 노출 방지
-      card.innerHTML =
-        '<div class="g-thumb"><img alt="" loading="lazy"></div>' +
-        '<div class="g-meta"><span>도전 ' + (d.stats ? d.stats.plays : 0) + '</span>' +
-        (dollCount > 1 ? '<span class="g-count">🧍×' + dollCount + '</span>' : '') +
-        '<span class="g-grade">' + grade.g + '</span></div>';
-      card.querySelector('img').src = d.photoB64;
-      card.addEventListener('click', () => {
-        // 새 URL로 이동해 플레이 (라우팅 로직 재사용, 뒤로 가기도 자연스럽다)
-        location.href = location.pathname + '?s=' + id;
-      });
-      grid.appendChild(card);
+      grid.appendChild(buildStageCard(id, snap.data()));
       loaded++;
     } catch(e){
       console.warn('예제 스테이지 로드 실패:', id, e);
@@ -2149,6 +2163,32 @@ async function renderGallery(){
   }
   $('gallery-loading').classList.add('hidden');
   if (!loaded) $('gallery').classList.add('hidden');
+}
+
+async function renderPublicGallery(){
+  await initFirebase();
+  if (!fb.ready) return;
+  $('public-gallery').classList.remove('hidden');
+  $('public-gallery-loading').classList.remove('hidden');
+  const grid = $('public-gallery-grid');
+  grid.innerHTML = '';
+  let loaded = 0;
+  try {
+    const snap = await fb.db.collection('stages')
+      .where('isPublic', '==', true)
+      .orderBy('stats.plays', 'desc')
+      .limit(20)
+      .get();
+    snap.forEach((doc) => {
+      grid.appendChild(buildStageCard(doc.id, doc.data()));
+      loaded++;
+    });
+  } catch(e){
+    // 인덱스 미생성 등으로 쿼리가 실패해도 섹션을 조용히 숨긴다
+    console.warn('공개 갤러리 로드 실패:', e);
+  }
+  $('public-gallery-loading').classList.add('hidden');
+  if (!loaded) $('public-gallery').classList.add('hidden');
 }
 
 /* ==========================================================
@@ -2405,6 +2445,7 @@ function goHomeClean(){
   resetAll();
   setPhase('home');
   renderGallery();
+  renderPublicGallery();
 }
 $('btn-start').addEventListener('click', () => setPhase('upload'));
 $('btn-home').addEventListener('click', () => {
@@ -2491,6 +2532,7 @@ async function boot(){
     setPhase('home');
     initFirebase();  // 저장 시점 지연 방지 위해 백그라운드로 미리 익명 인증 시작
     renderGallery();
+    renderPublicGallery();
   }
 }
 boot();
