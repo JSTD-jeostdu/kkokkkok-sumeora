@@ -743,7 +743,7 @@ let timerIv = null, countdownIv = null;
 let testFoundFlags = null;   // 로컬 테스트 플레이 중 인형별 발견 여부(state.dolls와 같은 길이)
 let playFoundFlags = null;   // 신규 포맷 원격 플레이 중 인형별 발견 여부 (Task 6에서 사용)
 
-/* ---------- Firebase (익명 인증) ---------- */
+/* ---------- Firebase (익명 기본 + 선택적 구글 로그인) ---------- */
 const fb = { db: null, uid: null, ready: false };
 let fbInitPromise = null;
 function initFirebase(){
@@ -753,9 +753,15 @@ function initFirebase(){
     try {
       firebase.initializeApp(CONFIG.firebase);
       fb.db = firebase.firestore();
-      const cred = await firebase.auth().signInAnonymously();
-      fb.uid = cred.user.uid;
+      await completeAuthRedirect(); // 구글 로그인 리다이렉트 복귀 처리 (없으면 즉시 반환)
+      if (!firebase.auth().currentUser){
+        const cred = await firebase.auth().signInAnonymously();
+        fb.uid = cred.user.uid;
+      } else {
+        fb.uid = firebase.auth().currentUser.uid;
+      }
       fb.ready = true;
+      updateAccountUI();
     } catch(e){
       console.warn('Firebase 초기화 실패 — 오프라인 모드로 동작:', e);
       fb.ready = false;
@@ -763,6 +769,89 @@ function initFirebase(){
     return fb.ready;
   })();
   return fbInitPromise;
+}
+
+// 로그인 버튼 클릭 → 현재 익명 계정에 구글 credential 연결 시도 (리다이렉트로 이동)
+async function loginWithGoogle(){
+  await initFirebase();
+  if (!fb.ready){ alert('지금은 연결할 수 없어요.'); return; }
+  const provider = new firebase.auth.GoogleAuthProvider();
+  try {
+    await firebase.auth().currentUser.linkWithRedirect(provider);
+    // 여기서 구글 로그인 페이지로 이동하므로 이후 코드는 실행되지 않는다.
+  } catch(e){
+    console.warn('로그인 시작 실패:', e);
+    alert('로그인을 시작할 수 없어요.');
+  }
+}
+
+// 페이지 로드 시 구글 리다이렉트 복귀 결과 처리 (리다이렉트가 없었으면 조용히 반환)
+async function completeAuthRedirect(){
+  let result;
+  try {
+    result = await firebase.auth().getRedirectResult();
+  } catch(e){
+    if (e.code === 'auth/credential-already-in-use'){
+      // 병합 실패가 initFirebase() 전체를 오프라인 모드로 끌어내리지 않도록 여기서 격리한다 —
+      // 익명 세션 자체는 멀쩡하므로 로그인 시도 하나의 실패로 앱 전체 기능을 잃으면 안 된다.
+      try {
+        await mergeAndSignIn(e.credential);
+      } catch(mergeErr){
+        console.warn('계정 병합 실패:', mergeErr);
+        alert('계정 전환 중 문제가 생겼어요. 스테이지는 안전하게 남아있으니, 다시 로그인해 주세요.');
+      }
+    } else if (e.code){
+      console.warn('로그인 실패:', e);
+    }
+    return;
+  }
+  if (result && result.user){
+    fb.uid = result.user.uid; // 연결 성공 — uid는 그대로 유지되지만 갱신해 둠
+  }
+}
+
+// "이미 다른 기기에서 이 구글 계정을 쓴 적 있음" 상황의 안전한 병합.
+// 순서가 핵심: 아직 익명 세션인 상태에서 소유권을 먼저 넘긴 뒤에야 계정을 전환한다.
+// 어느 시점에도 규칙(creatorUid == 현재 로그인 uid)을 어기지 않고, 데이터가 유실되지 않는다.
+async function mergeAndSignIn(credential){
+  const oldUid = fb.uid; // 아직 익명 uid로 인증된 상태
+  // 보조 Firebase 앱 인스턴스로 대상 계정의 uid만 조용히 확인 — 기본 세션은 익명으로 유지
+  const secondary = firebase.initializeApp(CONFIG.firebase, 'merge-probe-' + Date.now());
+  let targetUid;
+  try {
+    const cred = await secondary.auth().signInWithCredential(credential);
+    targetUid = cred.user.uid;
+  } finally {
+    await secondary.auth().signOut().catch(() => {});
+    await secondary.delete().catch(() => {});
+  }
+  // 여전히 기본 세션은 익명(oldUid) — 이 상태에서 소유권 이전 (규칙: 현재 소유자 본인만 허용)
+  const snap = await fb.db.collection('stages').where('creatorUid', '==', oldUid).get();
+  if (!snap.empty){
+    const batch = fb.db.batch();
+    snap.forEach((doc) => batch.update(doc.ref, { creatorUid: targetUid }));
+    await batch.commit();
+  }
+  // 이관이 끝난 뒤에야 기본 세션을 대상 계정으로 전환
+  const finalCred = await firebase.auth().signInWithCredential(credential);
+  fb.uid = finalCred.user.uid;
+}
+
+// 로그인 상태에 따라 홈 화면 링크 텍스트·"내 스테이지" 링크 표시 갱신
+function updateAccountUI(){
+  const loginLink = $('link-login');
+  const mystagesLink = $('link-mystages');
+  if (!loginLink || !mystagesLink) return;
+  const user = firebase.auth().currentUser;
+  if (user && !user.isAnonymous){
+    loginLink.textContent = (user.displayName || '회원') + '님 · 로그아웃';
+    loginLink.dataset.mode = 'logout';
+    mystagesLink.classList.remove('hidden');
+  } else {
+    loginLink.textContent = '로그인';
+    loginLink.dataset.mode = 'login';
+    mystagesLink.classList.add('hidden');
+  }
 }
 
 /* ---------- 요소 참조 ---------- */
