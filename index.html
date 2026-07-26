@@ -775,7 +775,6 @@ function initFirebase(){
     try {
       firebase.initializeApp(CONFIG.firebase);
       fb.db = firebase.firestore();
-      await completeAuthRedirect(); // 구글 로그인 리다이렉트 복귀 처리 (없으면 즉시 반환)
       if (!firebase.auth().currentUser){
         const cred = await firebase.auth().signInAnonymously();
         fb.uid = cred.user.uid;
@@ -793,45 +792,37 @@ function initFirebase(){
   return fbInitPromise;
 }
 
-// 로그인 버튼 클릭 → 현재 익명 계정에 구글 credential 연결 시도 (리다이렉트로 이동)
+// 로그인 버튼 클릭 → 현재 익명 계정에 구글 credential 연결 시도 (팝업).
+// 리다이렉트 방식(linkWithRedirect + getRedirectResult)은 실기기 검증에서
+// 페이지를 오가는 사이에 "이건 내가 시작한 리다이렉트다"라는 연결고리를 SDK가
+// 못 찾는 문제가 확인되어 팝업으로 전환했다 — 팝업은 페이지 이동이 없어 이 문제 자체가 없다.
+// (트레이드오프: 카카오톡 등 일부 인앱 브라우저는 팝업을 막을 수 있음. 로그인은
+// 핵심 플레이·공유 흐름과 무관한 선택 기능이라 감수함)
 async function loginWithGoogle(){
   await initFirebase();
   if (!fb.ready){ alert('지금은 연결할 수 없어요.'); return; }
   const provider = new firebase.auth.GoogleAuthProvider();
   try {
-    await firebase.auth().currentUser.linkWithRedirect(provider);
-    // 여기서 구글 로그인 페이지로 이동하므로 이후 코드는 실행되지 않는다.
+    const result = await firebase.auth().currentUser.linkWithPopup(provider);
+    fb.uid = result.user.uid; // 연결 성공 — uid는 그대로 유지되지만 갱신해 둠
+    updateAccountUI();
   } catch(e){
-    console.warn('로그인 시작 실패:', e);
-    alert('로그인을 시작할 수 없어요.');
-  }
-}
-
-// 페이지 로드 시 구글 리다이렉트 복귀 결과 처리 (리다이렉트가 없었으면 조용히 반환)
-async function completeAuthRedirect(){
-  let result;
-  try {
-    result = await firebase.auth().getRedirectResult();
-    console.log('[Auth] getRedirectResult 완료:', result && result.user ? { uid: result.user.uid, providerId: result.credential && result.credential.providerId } : '(user 없음 — 대기 중인 리다이렉트 없었음)');
-  } catch(e){
-    console.log('[Auth] getRedirectResult 에러:', e.code, e.message);
     if (e.code === 'auth/credential-already-in-use'){
-      // 병합 실패가 initFirebase() 전체를 오프라인 모드로 끌어내리지 않도록 여기서 격리한다 —
-      // 익명 세션 자체는 멀쩡하므로 로그인 시도 하나의 실패로 앱 전체 기능을 잃으면 안 된다.
+      // 병합 실패가 로그인 시도 하나를 넘어 앱 전체에 영향을 주지 않도록 격리한다 —
+      // 익명 세션 자체는 멀쩡하므로 실패해도 저장·플레이 등 기존 기능은 그대로 동작해야 한다.
       try {
         await mergeAndSignIn(e.credential);
-        console.log('[Auth] 병합 성공, 최종 uid:', fb.uid);
+        updateAccountUI();
       } catch(mergeErr){
         console.warn('계정 병합 실패:', mergeErr);
         alert('계정 전환 중 문제가 생겼어요. 스테이지는 안전하게 남아있으니, 다시 로그인해 주세요.');
       }
-    } else if (e.code){
-      console.warn('로그인 실패:', e);
+    } else if (e.code === 'auth/popup-blocked' || e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request'){
+      alert('로그인 창이 막혔거나 닫혔어요. 팝업 차단을 해제한 뒤 다시 시도해 주세요.');
+    } else {
+      console.warn('로그인 시작 실패:', e);
+      alert('로그인을 시작할 수 없어요.');
     }
-    return;
-  }
-  if (result && result.user){
-    fb.uid = result.user.uid; // 연결 성공 — uid는 그대로 유지되지만 갱신해 둠
   }
 }
 
