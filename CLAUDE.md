@@ -80,11 +80,12 @@
 
 ## 배포 절차 (GitHub Pages — 사용자 직접 수행)
 1. ✅ Firebase 콘솔: 프로젝트 생성 → Authentication **익명 로그인 활성화** → 웹 앱 등록 → config를 `CONFIG.firebase`에 붙여넣기 (Spark 무료 플랜 그대로, 카드 불필요)
-2. Firestore Database 생성(프로덕션 모드, 리전 asia-northeast3 권장) → `firestore.rules` 내용을 규칙 탭에 게시 (Storage는 만들지 않는다)
-3. 공개 갤러리 복합 인덱스 배포: `firebase deploy --only firestore:rules,firestore:indexes` (firestore.indexes.json에 `isPublic`+`stats.plays` 인덱스가 코드화되어 있어 콘솔 수동 생성 불필요)
-4. GitHub 저장소에 `index.html` 푸시 → Settings > Pages 활성화
-5. 실기기 검증: 저장→시크릿 창 플레이→두 기기 동시 플레이(stats 유실 확인)→삭제키 삭제→결과 보기 히트맵
-6. 예제 스테이지 5개 직접 제작 → ID를 `CONFIG.EXAMPLE_STAGES`에 기입 → 재푸시
+2. Firebase 콘솔: Authentication → Sign-in method → **Google** 활성화 (지원 이메일 설정 필요)
+3. Firestore Database 생성(프로덕션 모드, 리전 asia-northeast3 권장) → `firestore.rules` 내용을 규칙 탭에 게시 (Storage는 만들지 않는다)
+4. 공개 갤러리 복합 인덱스 배포: `firebase deploy --only firestore:rules,firestore:indexes` (firestore.indexes.json에 `isPublic`+`stats.plays` 인덱스가 코드화되어 있어 콘솔 수동 생성 불필요)
+5. GitHub 저장소에 `index.html` 푸시 → Settings > Pages 활성화
+6. 실기기 검증: 저장→시크릿 창 플레이→두 기기 동시 플레이(stats 유실 확인)→삭제키 삭제→결과 보기 히트맵→**구글 로그인·내 스테이지·다른 기기 병합 확인**
+7. 예제 스테이지 5개 직접 제작 → ID를 `CONFIG.EXAMPLE_STAGES`에 기입 → 재푸시
 
 ## 백로그 (구현하지 않음 — 기록만)
 - 미끼 인형 2개 (가짜 실루엣, 누르면 "속았지?" 연출)
