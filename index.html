@@ -859,7 +859,6 @@ function updateAccountUI(){
   const mystagesLink = $('link-mystages');
   if (!loginLink || !mystagesLink) return;
   const user = firebase.auth().currentUser;
-  console.log('[Auth] updateAccountUI 호출, currentUser:', user ? { uid: user.uid, isAnonymous: user.isAnonymous, displayName: user.displayName } : null);
   if (user && !user.isAnonymous){
     loginLink.textContent = (user.displayName || '회원') + '님 · 로그아웃';
     loginLink.dataset.mode = 'logout';
