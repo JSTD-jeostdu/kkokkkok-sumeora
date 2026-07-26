@@ -812,12 +812,15 @@ async function completeAuthRedirect(){
   let result;
   try {
     result = await firebase.auth().getRedirectResult();
+    console.log('[Auth] getRedirectResult 완료:', result && result.user ? { uid: result.user.uid, providerId: result.credential && result.credential.providerId } : '(user 없음 — 대기 중인 리다이렉트 없었음)');
   } catch(e){
+    console.log('[Auth] getRedirectResult 에러:', e.code, e.message);
     if (e.code === 'auth/credential-already-in-use'){
       // 병합 실패가 initFirebase() 전체를 오프라인 모드로 끌어내리지 않도록 여기서 격리한다 —
       // 익명 세션 자체는 멀쩡하므로 로그인 시도 하나의 실패로 앱 전체 기능을 잃으면 안 된다.
       try {
         await mergeAndSignIn(e.credential);
+        console.log('[Auth] 병합 성공, 최종 uid:', fb.uid);
       } catch(mergeErr){
         console.warn('계정 병합 실패:', mergeErr);
         alert('계정 전환 중 문제가 생겼어요. 스테이지는 안전하게 남아있으니, 다시 로그인해 주세요.');
@@ -865,6 +868,7 @@ function updateAccountUI(){
   const mystagesLink = $('link-mystages');
   if (!loginLink || !mystagesLink) return;
   const user = firebase.auth().currentUser;
+  console.log('[Auth] updateAccountUI 호출, currentUser:', user ? { uid: user.uid, isAnonymous: user.isAnonymous, displayName: user.displayName } : null);
   if (user && !user.isAnonymous){
     loginLink.textContent = (user.displayName || '회원') + '님 · 로그아웃';
     loginLink.dataset.mode = 'logout';
