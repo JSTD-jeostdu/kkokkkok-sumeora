@@ -123,6 +123,12 @@ h1,h2,h3{ margin:0; font-weight:700; }
 .g-meta{ display:flex; align-items:center; justify-content:space-between; padding:6px 10px; font-size:16px; }
 .g-grade{ font-weight:700; color:var(--accent); font-size:20px; }
 .g-count{ font-size:13px; color:var(--pencil-soft); }
+.mystage-item{ margin-bottom:14px; }
+.mystage-row{ display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.mystage-thumb{ width:64px; height:64px; border-radius:10px; overflow:hidden; background:#e9e5dc; flex:0 0 auto; }
+.mystage-thumb img{ width:100%; height:100%; object-fit:cover; }
+.mystage-plays{ font-size:16px; color:var(--pencil-soft); }
+.mystage-item .btn{ margin-top:6px; }
 #gallery-loading{ text-align:center; color:var(--pencil-soft); font-size:16px; }
 #public-gallery{ width:100%; text-align:left; margin-top:16px; }
 #public-gallery h3{ margin-bottom:10px; }
@@ -608,6 +614,14 @@ h1,h2,h3{ margin:0; font-weight:700; }
         <button class="btn btn-ghost" id="btn-delete-cancel">취소</button>
         <button class="btn btn-primary" id="btn-delete-confirm">삭제하기</button>
       </div>
+    </div>
+
+    <!-- 내 스테이지 (로그인 사용자 전용) -->
+    <div id="mystages-panel" class="panel hidden">
+      <h3>내 스테이지 📂</h3>
+      <p id="mystages-loading" class="hint-line">불러오는 중…</p>
+      <p id="mystages-empty" class="hint-line hidden">아직 만든 스테이지가 없어요.</p>
+      <div id="mystages-list"></div>
     </div>
   </section>
 
@@ -1128,7 +1142,7 @@ function renderStage(){
 const PHASE_LABELS = {
   upload:'사진 고르기', paint:'위장 색칠', place:'숨길 곳 정하기', test:'테스트 플레이',
   save:'저장 중', share:'공유하기', load:'불러오는 중', ready:'준비!', play:'찾아라!',
-  end:'결과', view:'결과 보기', error:'앗', 'delete':'스테이지 삭제',
+  end:'결과', view:'결과 보기', error:'앗', 'delete':'스테이지 삭제', mystages:'내 스테이지',
 };
 function setPhase(phase){
   if (zoomOpen) closeZoom();
@@ -1143,6 +1157,7 @@ function setPhase(phase){
     save: $('save-panel'), share: $('share-panel'), load: $('load-panel'),
     ready: $('play-panel'), play: $('play-panel'), end: $('playend-panel'),
     view: $('result-panel'), error: $('error-panel'), 'delete': $('delete-panel'),
+    mystages: $('mystages-panel'),
   };
   Object.values(panels).forEach((el) => el.classList.add('hidden'));
   if (panels[phase]) panels[phase].classList.remove('hidden');
@@ -2286,6 +2301,63 @@ async function renderPublicGallery(){
   }
   $('public-gallery-loading').classList.add('hidden');
   if (!loaded) $('public-gallery').classList.add('hidden');
+}
+
+async function renderMyStages(){
+  await initFirebase();
+  if (!fb.ready) return;
+  const user = firebase.auth().currentUser;
+  if (!user || user.isAnonymous) return; // 로그인하지 않았으면 진입하지 않음
+  setPhase('mystages');
+  $('mystages-loading').classList.remove('hidden');
+  $('mystages-empty').classList.add('hidden');
+  const list = $('mystages-list');
+  list.innerHTML = '';
+  try {
+    const snap = await fb.db.collection('stages').where('creatorUid', '==', user.uid).get();
+    if (snap.empty){
+      $('mystages-empty').classList.remove('hidden');
+    } else {
+      snap.forEach((doc) => list.appendChild(buildMyStageItem(doc.id, doc.data())));
+    }
+  } catch(e){
+    console.warn('내 스테이지 로드 실패:', e);
+    $('mystages-empty').textContent = '불러오기에 실패했어요.';
+    $('mystages-empty').classList.remove('hidden');
+  }
+  $('mystages-loading').classList.add('hidden');
+}
+
+function buildMyStageItem(id, d){
+  const item = document.createElement('div');
+  item.className = 'mystage-item cut-card';
+  item.innerHTML =
+    '<div class="mystage-row">' +
+      '<div class="mystage-thumb"><img alt=""></div>' +
+      '<span class="mystage-plays">도전 ' + (d.stats ? d.stats.plays : 0) + '</span>' +
+    '</div>' +
+    '<button class="btn btn-ghost btn-wide" data-action="view">보기</button>' +
+    '<button class="btn btn-ghost btn-wide" data-action="link">공유 링크 다시 보기</button>' +
+    '<button class="btn btn-ghost btn-wide" data-action="delete">삭제</button>';
+  item.querySelector('img').src = d.photoB64;
+  item.querySelector('[data-action="view"]').addEventListener('click', () => loadResultView(id));
+  item.querySelector('[data-action="link"]').addEventListener('click', () => {
+    prompt('공유 링크 (Ctrl+C로 복사하세요)', location.origin + location.pathname + '?s=' + id);
+  });
+  item.querySelector('[data-action="delete"]').addEventListener('click', () => deleteOwnStage(id, item));
+  return item;
+}
+
+async function deleteOwnStage(id, itemEl){
+  if (!confirm('이 스테이지를 삭제할까요? 되돌릴 수 없어요.')) return;
+  try {
+    await fb.db.collection('stages').doc(id).delete();
+    itemEl.remove();
+    if (!$('mystages-list').children.length) $('mystages-empty').classList.remove('hidden');
+  } catch(e){
+    console.warn('삭제 실패:', e);
+    alert('삭제에 실패했어요.');
+  }
 }
 
 /* ==========================================================
