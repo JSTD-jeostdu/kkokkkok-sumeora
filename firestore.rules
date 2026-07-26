@@ -7,9 +7,10 @@ service cloud.firestore {
     match /stages/{stageId} {
       // 개별 조회: 링크(?s=)로 플레이, 예제 갤러리 — ID를 아는 사람은 전체 허용 (기존과 동일)
       allow get: if true;
-      // 목록 조회: 공개 갤러리 전용 — isPublic == true인 문서만 쿼리 결과에 포함.
-      // 기존 문서는 isPublic 필드가 없어(undefined != true) 자동으로 제외된다.
-      allow list: if resource.data.isPublic == true;
+      // 목록 조회: 공개 갤러리(isPublic) + 내 스테이지 목록(creatorUid 본인) 둘 다 허용.
+      // 기존 문서는 isPublic 필드가 없어(undefined != true) 공개 갤러리에서는 자동 제외된다.
+      allow list: if resource.data.isPublic == true
+        || (request.auth != null && resource.data.creatorUid == request.auth.uid);
 
       // 생성: 익명 인증 + 본인 uid + 필수 필드 + 이미지 크기 예산 준수
       allow create: if request.auth != null
@@ -40,14 +41,19 @@ service cloud.firestore {
           && request.resource.data.dolls[2].eyedropperUses <= 3
         ));
 
-      // 수정: 플레이 기록(stats·taps)만 변경 가능 — 사진·인형·삭제키 등 변경 거부
-      allow update: if request.auth != null
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stats','taps']);
+      // 수정: 기존 stats/taps 변경 + 신규 creatorUid 단독 이전(병합용, 반드시 현재 소유자 본인만).
+      // creatorUid 이전은 "지금 소유자가 자기 콘텐츠를 자기 다른 계정으로 넘기는" 동작이라
+      // 다른 사람 소유 문서를 가로챌 수 없다 (request.auth.uid == resource.data.creatorUid로 보호).
+      allow update: if request.auth != null && (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['stats','taps'])
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['creatorUid'])
+            && request.auth.uid == resource.data.creatorUid)
+      );
 
-      // 삭제: 삭제키(SHA-256 해시) 검증이 클라이언트에서 이뤄지는 구조적 한계.
-      // 무료 플랜에서 Cloud Functions 없이 서버 검증이 불가하므로 인증 사용자에게 허용한다.
-      // → 문제가 생기면 Functions 도입(삭제키 서버 검증)으로 전환할 것.
-      allow delete: if request.auth != null;
+      // 삭제: 기존엔 "인증만 되면 누구나" 삭제 가능했던 허점을 소유자 본인으로 강화.
+      // 지금까지도 삭제는 항상 스테이지를 만든 바로 그 세션(창작자 본인)에서만 이뤄져 왔으므로
+      // 기존 삭제키 UX에는 영향이 없고, ID만 알아도 삭제할 수 있었던 허점만 막는다.
+      allow delete: if request.auth != null && request.auth.uid == resource.data.creatorUid;
     }
   }
 }
