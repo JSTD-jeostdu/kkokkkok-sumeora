@@ -84,8 +84,9 @@
 3. Firestore Database 생성(프로덕션 모드, 리전 asia-northeast3 권장) → `firestore.rules` 내용을 규칙 탭에 게시 (Storage는 만들지 않는다)
 4. 공개 갤러리 복합 인덱스 배포: `firebase deploy --only firestore:rules,firestore:indexes` (firestore.indexes.json에 `isPublic`+`stats.plays` 인덱스가 코드화되어 있어 콘솔 수동 생성 불필요)
 5. GitHub 저장소에 `index.html` 푸시 → Settings > Pages 활성화
-6. 실기기 검증: 저장→시크릿 창 플레이→두 기기 동시 플레이(stats 유실 확인)→삭제키 삭제→결과 보기 히트맵→**구글 로그인·내 스테이지·다른 기기 병합 확인**
-7. 예제 스테이지 5개 직접 제작 → ID를 `CONFIG.EXAMPLE_STAGES`에 기입 → 재푸시
+6. **Firebase 콘솔: Authentication → Settings 탭 → Authorized domains에 실제 배포 도메인(예: `jstd-jeostdu.github.io`) 추가** — 2번(Sign-in method)과 다른 탭이라 놓치기 쉬움. 빠뜨리면 로그인 버튼 클릭 시 `auth/unauthorized-domain` 에러로 조용히 실패한다
+7. 실기기 검증: 저장→시크릿 창 플레이→두 기기 동시 플레이(stats 유실 확인)→삭제키 삭제→결과 보기 히트맵→**구글 로그인·내 스테이지·다른 기기 병합 확인**
+8. 예제 스테이지 5개 직접 제작 → ID를 `CONFIG.EXAMPLE_STAGES`에 기입 → 재푸시
 
 ## 백로그 (구현하지 않음 — 기록만)
 - 미끼 인형 2개 (가짜 실루엣, 누르면 "속았지?" 연출)
