@@ -372,6 +372,16 @@ h1,h2,h3{ margin:0; font-weight:700; }
   border:2.5px solid var(--pencil); border-radius:12px; padding:10px; background:#fff; text-transform:uppercase; }
 #delete-msg{ text-align:center; font-size:17px; min-height:24px; margin:8px 0 0; color:var(--accent); }
 
+/* ---------- 프로필 편집 ---------- */
+.profile-avatar-row{ display:flex; align-items:center; gap:14px; margin-bottom:14px; }
+.profile-avatar-preview{ width:88px; height:88px; border-radius:50%; overflow:hidden; flex:0 0 auto;
+  background:var(--pencil-soft); color:#fff; font-size:32px; font-weight:700;
+  display:flex; align-items:center; justify-content:center; }
+.profile-avatar-preview img{ width:100%; height:100%; object-fit:cover; }
+#profile-panel input[type=text]{ width:100%; font-family:inherit; font-size:18px;
+  border:2.5px solid var(--pencil); border-radius:10px; padding:10px; background:#fff; margin-bottom:2px; }
+#profile-msg{ text-align:center; font-size:15px; min-height:22px; margin:4px 0 0; color:var(--accent); }
+
 @media (prefers-reduced-motion: reduce){
   *{ animation-duration:.01ms !important; animation-iteration-count:1 !important; transition:none !important; }
 }
@@ -627,6 +637,24 @@ h1,h2,h3{ margin:0; font-weight:700; }
       <p id="mystages-loading" class="hint-line">불러오는 중…</p>
       <p id="mystages-empty" class="hint-line hidden">아직 만든 스테이지가 없어요.</p>
       <div id="mystages-list"></div>
+    </div>
+
+    <!-- 프로필 편집 (로그인 사용자 전용) -->
+    <div id="profile-panel" class="panel solo hidden">
+      <h3>프로필 편집 🖊️</h3>
+      <div class="profile-avatar-row">
+        <div class="profile-avatar-preview" id="profile-avatar-preview" aria-label="프로필 사진 미리보기"></div>
+        <button class="btn btn-ghost" id="btn-profile-pick">사진 바꾸기</button>
+        <input type="file" id="profile-avatar-input" accept="image/*" hidden>
+      </div>
+      <label class="hint-line" for="profile-nickname-input">닉네임</label>
+      <input type="text" id="profile-nickname-input" maxlength="12" autocomplete="off" aria-label="닉네임">
+      <p id="profile-msg" aria-live="polite"></p>
+      <div class="panel-actions">
+        <button class="btn btn-ghost" id="btn-profile-cancel">취소</button>
+        <button class="btn btn-primary" id="btn-profile-save">저장</button>
+      </div>
+      <button class="link-btn" id="btn-profile-logout">로그아웃</button>
     </div>
   </section>
 
@@ -1190,6 +1218,7 @@ const PHASE_LABELS = {
   upload:'사진 고르기', paint:'위장 색칠', place:'숨길 곳 정하기', test:'테스트 플레이',
   save:'저장 중', share:'공유하기', load:'불러오는 중', ready:'준비!', play:'찾아라!',
   end:'결과', view:'결과 보기', error:'앗', 'delete':'스테이지 삭제', mystages:'내 스테이지',
+  profile:'프로필 편집',
 };
 function setPhase(phase){
   if (zoomOpen) closeZoom();
@@ -1204,7 +1233,7 @@ function setPhase(phase){
     save: $('save-panel'), share: $('share-panel'), load: $('load-panel'),
     ready: $('play-panel'), play: $('play-panel'), end: $('playend-panel'),
     view: $('result-panel'), error: $('error-panel'), 'delete': $('delete-panel'),
-    mystages: $('mystages-panel'),
+    mystages: $('mystages-panel'), profile: $('profile-panel'),
   };
   Object.values(panels).forEach((el) => el.classList.add('hidden'));
   if (panels[phase]) panels[phase].classList.remove('hidden');
