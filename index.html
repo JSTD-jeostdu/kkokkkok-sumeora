@@ -951,6 +951,79 @@ async function updateAccountUI(){
   renderAccountLink();
 }
 
+// 편집 중인 아바타(저장 전 임시값). null = 아바타 없음, 문자열 = data URI(기존값 또는 새로 고른 사진).
+let profileEditAvatarB64 = null;
+
+function openProfilePanel(){
+  const user = firebase.auth().currentUser;
+  if (!user || user.isAnonymous) return;
+  $('profile-nickname-input').value = (profileCache && profileCache.nickname) || user.displayName || '';
+  profileEditAvatarB64 = (profileCache && profileCache.avatarB64) || null;
+  $('profile-msg').textContent = '';
+  renderProfileAvatarPreview();
+  setPhase('profile');
+}
+
+// profileEditAvatarB64(또는 없으면 닉네임 이니셜)로 편집 화면의 미리보기만 갱신 — 저장 전 로컬 상태.
+function renderProfileAvatarPreview(){
+  const el = $('profile-avatar-preview');
+  el.innerHTML = '';
+  if (profileEditAvatarB64){
+    const img = document.createElement('img');
+    img.src = profileEditAvatarB64;
+    img.alt = '';
+    el.appendChild(img);
+  } else {
+    const nickname = $('profile-nickname-input').value.trim();
+    el.textContent = nickname ? nickname.charAt(0) : '?';
+  }
+}
+
+async function handleProfileAvatarFile(file){
+  if (!file || !file.type.startsWith('image/')){ alert('이미지 파일을 골라주세요.'); return; }
+  let b64;
+  try { b64 = await fileToAvatarB64(file); }
+  catch(e){ alert('사진을 불러오지 못했어요. 다른 사진으로 시도해 주세요.'); return; }
+  if (!b64){ alert('이 사진은 처리할 수 없었어요. 다른 사진으로 시도해 주세요.'); return; }
+  profileEditAvatarB64 = b64;
+  renderProfileAvatarPreview();
+}
+
+async function saveProfileEdit(){
+  const nickname = $('profile-nickname-input').value.trim();
+  if (nickname.length < 2 || nickname.length > 12){
+    $('profile-msg').textContent = '닉네임은 2~12자로 입력해 주세요.';
+    return;
+  }
+  const user = firebase.auth().currentUser;
+  if (!user || user.isAnonymous) return;
+  $('btn-profile-save').disabled = true;
+  try {
+    await saveProfile(user.uid, nickname, profileEditAvatarB64);
+    profileCache = { nickname, avatarB64: profileEditAvatarB64 };
+    renderAccountLink(); // 방금 쓴 값을 이미 알고 있으므로 재조회 없이 바로 반영
+    setPhase('home');
+  } catch(e){
+    console.warn('프로필 저장 실패:', e);
+    $('profile-msg').textContent = '저장에 실패했어요. 다시 시도해 주세요.';
+  }
+  $('btn-profile-save').disabled = false;
+}
+
+function cancelProfileEdit(){
+  setPhase('home');
+}
+
+async function logoutAccount(){
+  await firebase.auth().signOut();
+  const cred = await firebase.auth().signInAnonymously();
+  fb.uid = cred.user.uid;
+  await updateAccountUI();
+  setPhase('home');
+  renderGallery();
+  renderPublicGallery();
+}
+
 /* ---------- 요소 참조 ---------- */
 const $ = (id) => document.getElementById(id);
 const screenHome = $('screen-home'), screenMaker = $('screen-maker');
@@ -2691,6 +2764,18 @@ $('link-login').addEventListener('click', () => {
   }
 });
 $('link-mystages').addEventListener('click', () => renderMyStages());
+$('btn-profile-pick').addEventListener('click', () => $('profile-avatar-input').click());
+$('profile-avatar-input').addEventListener('change', (e) => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (f) handleProfileAvatarFile(f);
+});
+$('profile-nickname-input').addEventListener('input', () => {
+  if (!profileEditAvatarB64) renderProfileAvatarPreview(); // 이니셜 표시 중이면 입력에 맞춰 갱신
+});
+$('btn-profile-save').addEventListener('click', saveProfileEdit);
+$('btn-profile-cancel').addEventListener('click', cancelProfileEdit);
+$('btn-profile-logout').addEventListener('click', logoutAccount);
 $('btn-toggle-public').addEventListener('click', () => {
   state.isPublic = !state.isPublic;
   $('btn-toggle-public').setAttribute('aria-pressed', String(state.isPublic));
