@@ -104,7 +104,12 @@ h1,h2,h3{ margin:0; font-weight:700; }
 .home-account-row{ width:100%; display:flex; justify-content:flex-end; gap:14px; }
 .account-link{ background:none; border:none; font-family:inherit; font-size:14px;
   color:var(--pencil-soft); text-decoration:underline; cursor:pointer;
-  padding:0 4px; min-height:44px; display:inline-flex; align-items:center; }
+  padding:0 4px; min-height:44px; display:inline-flex; align-items:center; gap:6px; }
+.account-link:has(.mini-avatar){ text-decoration:none; }
+.mini-avatar{ width:26px; height:26px; border-radius:50%; overflow:hidden; flex:0 0 auto;
+  background:var(--pencil-soft); color:#fff; font-size:13px; font-weight:700;
+  display:inline-flex; align-items:center; justify-content:center; }
+.mini-avatar img{ width:100%; height:100%; object-fit:cover; }
 .hero-doll{ width:120px; height:120px; filter:drop-shadow(0 6px 8px rgba(74,74,74,.18));
   animation:sway 3.2s ease-in-out infinite; transform-origin:50% 8%; }
 @keyframes sway{ 0%,100%{ transform:rotate(-4deg); } 50%{ transform:rotate(4deg); } }
@@ -875,21 +880,47 @@ async function saveProfile(uid, nickname, avatarB64){
   }, { merge: true });
 }
 
-// 로그인 상태에 따라 홈 화면 링크 텍스트·"내 스테이지" 링크 표시 갱신
-function updateAccountUI(){
+// 로그인 상태일 때 현재 사용자의 프로필({nickname,avatarB64}) 캐시. 비로그인이면 null.
+let profileCache = null;
+
+// profileCache + 현재 인증 상태만으로 홈 화면 계정 영역 DOM을 다시 그린다(재조회 없음).
+// 닉네임은 사용자 입력값이라 textContent만 사용한다 — innerHTML 문자열 조합 금지(XSS 방지).
+function renderAccountLink(){
   const loginLink = $('link-login');
   const mystagesLink = $('link-mystages');
   if (!loginLink || !mystagesLink) return;
   const user = firebase.auth().currentUser;
+  loginLink.innerHTML = '';
   if (user && !user.isAnonymous){
-    loginLink.textContent = (user.displayName || '회원') + '님 · 로그아웃';
-    loginLink.dataset.mode = 'logout';
+    const nickname = (profileCache && profileCache.nickname) || user.displayName || '회원';
+    const avatar = document.createElement('span');
+    avatar.className = 'mini-avatar';
+    if (profileCache && profileCache.avatarB64){
+      const img = document.createElement('img');
+      img.src = profileCache.avatarB64;
+      img.alt = '';
+      avatar.appendChild(img);
+    } else {
+      avatar.textContent = nickname.charAt(0);
+    }
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = nickname;
+    loginLink.appendChild(avatar);
+    loginLink.appendChild(nameSpan);
+    loginLink.dataset.mode = 'account';
     mystagesLink.classList.remove('hidden');
   } else {
     loginLink.textContent = '로그인';
     loginLink.dataset.mode = 'login';
     mystagesLink.classList.add('hidden');
   }
+}
+
+// 로그인/로그아웃 등 인증 상태가 바뀔 때 프로필을 다시 읽어와 계정 영역을 갱신.
+async function updateAccountUI(){
+  const user = firebase.auth().currentUser;
+  profileCache = (user && !user.isAnonymous) ? await loadProfile(user.uid) : null;
+  renderAccountLink();
 }
 
 /* ---------- 요소 참조 ---------- */
@@ -2623,14 +2654,9 @@ $('btn-flip').addEventListener('click', () => {
   $('btn-flip').setAttribute('aria-pressed', String(activeEditDoll().flip));
   renderStage();
 });
-$('link-login').addEventListener('click', async () => {
-  if ($('link-login').dataset.mode === 'logout'){
-    await firebase.auth().signOut();
-    const cred = await firebase.auth().signInAnonymously();
-    fb.uid = cred.user.uid;
-    updateAccountUI();
-    renderGallery();
-    renderPublicGallery();
+$('link-login').addEventListener('click', () => {
+  if ($('link-login').dataset.mode === 'account'){
+    openProfilePanel();
   } else {
     loginWithGoogle();
   }
