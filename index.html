@@ -643,7 +643,7 @@ h1,h2,h3{ margin:0; font-weight:700; }
     <div id="profile-panel" class="panel solo hidden">
       <h3>프로필 편집 🖊️</h3>
       <div class="profile-avatar-row">
-        <div class="profile-avatar-preview" id="profile-avatar-preview" aria-label="프로필 사진 미리보기"></div>
+        <div class="profile-avatar-preview" id="profile-avatar-preview" role="img" aria-label="프로필 사진 미리보기"></div>
         <button class="btn btn-ghost" id="btn-profile-pick">사진 바꾸기</button>
         <input type="file" id="profile-avatar-input" accept="image/*" hidden>
       </div>
@@ -923,6 +923,7 @@ function renderAccountLink(){
     const nickname = (profileCache && profileCache.nickname) || user.displayName || '회원';
     const avatar = document.createElement('span');
     avatar.className = 'mini-avatar';
+    avatar.setAttribute('aria-hidden', 'true');
     if (profileCache && profileCache.avatarB64){
       const img = document.createElement('img');
       img.src = profileCache.avatarB64;
@@ -936,10 +937,12 @@ function renderAccountLink(){
     loginLink.appendChild(avatar);
     loginLink.appendChild(nameSpan);
     loginLink.dataset.mode = 'account';
+    loginLink.setAttribute('aria-label', nickname + ' · 프로필 편집');
     mystagesLink.classList.remove('hidden');
   } else {
     loginLink.textContent = '로그인';
     loginLink.dataset.mode = 'login';
+    loginLink.removeAttribute('aria-label');
     mystagesLink.classList.add('hidden');
   }
 }
@@ -947,7 +950,12 @@ function renderAccountLink(){
 // 로그인/로그아웃 등 인증 상태가 바뀔 때 프로필을 다시 읽어와 계정 영역을 갱신.
 async function updateAccountUI(){
   const user = firebase.auth().currentUser;
-  profileCache = (user && !user.isAnonymous) ? await loadProfile(user.uid) : null;
+  const uid = user ? user.uid : null;
+  const p = (user && !user.isAnonymous) ? await loadProfile(uid) : null;
+  // 비동기 조회 중 계정이 바뀌었으면(로그아웃→로그인 등) 낡은 결과를 버려 last-write-wins 레이스를 막는다.
+  const now = firebase.auth().currentUser;
+  if ((now ? now.uid : null) !== uid) return;
+  profileCache = p;
   renderAccountLink();
 }
 
@@ -1015,13 +1023,20 @@ function cancelProfileEdit(){
 }
 
 async function logoutAccount(){
-  await firebase.auth().signOut();
-  const cred = await firebase.auth().signInAnonymously();
-  fb.uid = cred.user.uid;
-  await updateAccountUI();
-  setPhase('home');
-  renderGallery();
-  renderPublicGallery();
+  $('btn-profile-logout').disabled = true;
+  try {
+    await firebase.auth().signOut();
+    const cred = await firebase.auth().signInAnonymously();
+    fb.uid = cred.user.uid;
+    await updateAccountUI();
+    setPhase('home');
+    renderGallery();
+    renderPublicGallery();
+  } catch(e){
+    console.warn('로그아웃 실패:', e);
+    $('profile-msg').textContent = '로그아웃에 실패했어요. 다시 시도해 주세요.';
+  }
+  $('btn-profile-logout').disabled = false;
 }
 
 /* ---------- 요소 참조 ---------- */
