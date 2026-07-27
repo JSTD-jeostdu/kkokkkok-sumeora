@@ -857,6 +857,24 @@ async function mergeAndSignIn(credential){
   fb.uid = finalCred.user.uid;
 }
 
+/* ---------- 프로필(닉네임·아바타) ---------- */
+async function loadProfile(uid){
+  try {
+    const doc = await fb.db.collection('users').doc(uid).get();
+    return doc.exists ? doc.data() : null;
+  } catch(e){
+    console.warn('프로필 로드 실패:', e);
+    return null;
+  }
+}
+async function saveProfile(uid, nickname, avatarB64){
+  await fb.db.collection('users').doc(uid).set({
+    nickname,
+    avatarB64: avatarB64 || null,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+}
+
 // 로그인 상태에 따라 홈 화면 링크 텍스트·"내 스테이지" 링크 표시 갱신
 function updateAccountUI(){
   const loginLink = $('link-login');

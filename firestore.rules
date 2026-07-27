@@ -55,5 +55,26 @@ service cloud.firestore {
       // 기존 삭제키 UX에는 영향이 없고, ID만 알아도 삭제할 수 있었던 허점만 막는다.
       allow delete: if request.auth != null && request.auth.uid == resource.data.creatorUid;
     }
+
+    // 프로필(닉네임·아바타) — 로그인 사용자 전용, 본인만 읽고 쓸 수 있다.
+    // 지금은 이 정보가 어디에도 공개 노출되지 않으므로 목록 조회·타인 조회는 전면 금지.
+    match /users/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list: if false;
+
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasAll(['nickname'])
+        && request.resource.data.nickname is string
+        && request.resource.data.nickname.size() >= 2
+        && request.resource.data.nickname.size() <= 12
+        && (!('avatarB64' in request.resource.data)
+            || request.resource.data.avatarB64 == null
+            || (request.resource.data.avatarB64 is string
+                && request.resource.data.avatarB64.size() < 50000
+                // data: URI만 허용 — 임의 원격 URL을 넣어 추적 픽셀 등으로 악용하는 것을 방지
+                && request.resource.data.avatarB64.matches('^data:image/.*')));
+
+      allow delete: if false;
+    }
   }
 }
