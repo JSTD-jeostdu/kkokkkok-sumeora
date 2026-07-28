@@ -382,8 +382,49 @@ h1,h2,h3{ margin:0; font-weight:700; }
   border:2.5px solid var(--pencil); border-radius:10px; padding:10px; background:#fff; margin-bottom:2px; }
 #profile-msg{ text-align:center; font-size:15px; min-height:22px; margin:4px 0 0; color:var(--accent); }
 
+/* ---------- 사용법 인트로 오버레이 ---------- */
+.intro-modal{
+  position:fixed; inset:0; z-index:70;
+  background:rgba(74,74,74,.5);
+  display:flex; align-items:center; justify-content:center; padding:16px;
+}
+.intro-card{
+  background:var(--paper); border:2.5px dashed var(--pencil-soft); border-radius:18px;
+  box-shadow:var(--shadow); padding:18px 16px 16px; width:100%; max-width:340px;
+  position:relative;
+}
+#btn-intro-skip{
+  position:absolute; top:8px; right:8px; z-index:1;
+  font-family:inherit; font-size:16px; font-weight:700;
+  border:2px solid var(--pencil); border-radius:50%;
+  width:36px; height:36px; min-width:36px; min-height:36px;
+  background:#fff; color:var(--pencil); cursor:pointer;
+}
+#btn-intro-skip:focus-visible{ outline:3px solid var(--accent); outline-offset:2px; }
+.intro-track{
+  display:flex; overflow-x:auto; scroll-snap-type:x mandatory; scroll-behavior:smooth;
+  scrollbar-width:none; border-radius:12px; margin-top:22px;
+}
+.intro-track::-webkit-scrollbar{ display:none; }
+.intro-slide{
+  flex:0 0 100%; scroll-snap-align:center;
+  display:flex; flex-direction:column; align-items:center; text-align:center;
+  gap:8px; padding:6px 12px 4px;
+}
+.intro-slide .intro-icon{ font-size:52px; line-height:1; }
+.intro-slide h3{ font-size:22px; }
+.intro-slide p{ font-size:17px; color:var(--pencil); margin:0; line-height:1.4; }
+.intro-dots{ display:flex; justify-content:center; margin-top:6px; }
+.intro-dot-btn{ background:none; border:none; padding:0; cursor:pointer;
+  width:32px; height:44px; display:flex; align-items:center; justify-content:center; }
+.intro-dot{ width:9px; height:9px; border-radius:50%; background:var(--pencil-soft); opacity:.4; transition:transform .15s ease; }
+.intro-dot-btn[aria-current="true"] .intro-dot{ opacity:1; background:var(--accent); transform:scale(1.3); }
+.intro-dot-btn:focus-visible{ outline:3px solid var(--accent); outline-offset:2px; }
+#btn-intro-next{ margin-top:8px; }
+
 @media (prefers-reduced-motion: reduce){
   *{ animation-duration:.01ms !important; animation-iteration-count:1 !important; transition:none !important; }
+  .intro-track{ scroll-behavior:auto; }
 }
 </style>
 </head>
@@ -421,6 +462,7 @@ h1,h2,h3{ margin:0; font-weight:700; }
       <p id="public-gallery-loading">불러오는 중…</p>
       <div id="public-gallery-grid"></div>
     </div>
+    <button class="link-btn" id="btn-intro-replay">사용법 다시보기</button>
   </section>
 
   <!-- ================= 제작·플레이 화면 ================= -->
@@ -657,6 +699,48 @@ h1,h2,h3{ margin:0; font-weight:700; }
       <button class="link-btn" id="btn-profile-logout">로그아웃</button>
     </div>
   </section>
+
+  <!-- 첫 방문 사용법 인트로: 홈 화면 첫 진입 시 1회 자동 표시, 이후 "사용법 다시보기"로 재호출 -->
+  <div id="intro-modal" class="intro-modal hidden" role="dialog" aria-modal="true" aria-label="사용법 안내">
+    <div class="intro-card">
+      <button id="btn-intro-skip" aria-label="사용법 안내 닫기">✕</button>
+      <div class="intro-track" id="intro-track">
+        <div class="intro-slide">
+          <div class="intro-icon" aria-hidden="true">📷</div>
+          <h3>사진 고르기</h3>
+          <p>숨바꼭질할 사진 한 장을 골라요.<br>기기 안에서만 처리되고<br>서버에 원본이 올라가지 않아요 🔒</p>
+        </div>
+        <div class="intro-slide">
+          <div class="intro-icon" aria-hidden="true">🎨</div>
+          <h3>위장색 입히기</h3>
+          <p>사진 속 색을 스포이드로 콕 찍어<br>인형에 발라요</p>
+        </div>
+        <div class="intro-slide">
+          <div class="intro-icon" aria-hidden="true">🤫</div>
+          <h3>몰래 숨기기</h3>
+          <p>크기·회전·위치를 맞춰<br>사진 배경 속에 인형을 숨겨요</p>
+        </div>
+        <div class="intro-slide">
+          <div class="intro-icon" aria-hidden="true">🔗</div>
+          <h3>링크로 공유</h3>
+          <p>가입 없이, 완전 무료로<br>링크 하나만 친구에게 보내면 끝!</p>
+        </div>
+        <div class="intro-slide">
+          <div class="intro-icon" aria-hidden="true">🔍</div>
+          <h3>친구가 찾기</h3>
+          <p>친구가 링크를 열면 카운트다운 후<br>제한시간 안에 인형을 찾아요</p>
+        </div>
+      </div>
+      <div class="intro-dots" id="intro-dots">
+        <button class="intro-dot-btn" data-index="0" aria-label="1번째 카드로 이동" aria-current="true"><span class="intro-dot"></span></button>
+        <button class="intro-dot-btn" data-index="1" aria-label="2번째 카드로 이동"><span class="intro-dot"></span></button>
+        <button class="intro-dot-btn" data-index="2" aria-label="3번째 카드로 이동"><span class="intro-dot"></span></button>
+        <button class="intro-dot-btn" data-index="3" aria-label="4번째 카드로 이동"><span class="intro-dot"></span></button>
+        <button class="intro-dot-btn" data-index="4" aria-label="5번째 카드로 이동"><span class="intro-dot"></span></button>
+      </div>
+      <button class="btn btn-primary btn-wide" id="btn-intro-next">다음</button>
+    </div>
+  </div>
 
   <!-- 색칠 확대 모달: dollView 캔버스와 도구 모음을 JS로 이 안에 옮겨 넣는다 (Task 2) -->
   <div id="zoom-modal" class="zoom-modal hidden" role="dialog" aria-modal="true" aria-label="확대 색칠">
@@ -2799,6 +2883,56 @@ $('btn-toggle-public').addEventListener('click', () => {
     : '🔒 이 스테이지를 공개 갤러리에 올리기';
 });
 
+/* ---------- 사용법 인트로 ---------- */
+const INTRO_SLIDE_COUNT = 5;
+const introModal = $('intro-modal');
+const introTrack = $('intro-track');
+const introDotBtns = Array.from(introModal.querySelectorAll('.intro-dot-btn'));
+let introIndex = 0;
+function updateIntroUI(){
+  introDotBtns.forEach((btn, i) => {
+    if (i === introIndex) btn.setAttribute('aria-current', 'true');
+    else btn.removeAttribute('aria-current');
+  });
+  $('btn-intro-next').textContent = (introIndex === INTRO_SLIDE_COUNT - 1) ? '시작하기' : '다음';
+}
+function goToIntroSlide(i){
+  introIndex = Math.max(0, Math.min(INTRO_SLIDE_COUNT - 1, i));
+  introTrack.scrollTo({ left: introIndex * introTrack.clientWidth, behavior: 'smooth' });
+  updateIntroUI();
+}
+function openIntro(){
+  introIndex = 0;
+  introTrack.scrollLeft = 0;
+  introModal.classList.remove('hidden');
+  updateIntroUI();
+}
+function closeIntro(){
+  introModal.classList.add('hidden');
+  try { localStorage.setItem('kks_intro_seen', '1'); } catch(e){ /* 프라이빗 모드 등: 매번 다시 뜨는 정도로 폴백 */ }
+}
+function maybeAutoOpenIntro(){
+  let seen = false;
+  try { seen = !!localStorage.getItem('kks_intro_seen'); } catch(e){}
+  if (!seen) openIntro();
+}
+introTrack.addEventListener('scroll', () => {
+  const i = Math.round(introTrack.scrollLeft / introTrack.clientWidth);
+  if (i !== introIndex){
+    introIndex = Math.max(0, Math.min(INTRO_SLIDE_COUNT - 1, i));
+    updateIntroUI();
+  }
+});
+introDotBtns.forEach((btn) => {
+  btn.addEventListener('click', () => goToIntroSlide(Number(btn.dataset.index)));
+});
+$('btn-intro-next').addEventListener('click', () => {
+  if (introIndex === INTRO_SLIDE_COUNT - 1) closeIntro();
+  else goToIntroSlide(introIndex + 1);
+});
+$('btn-intro-skip').addEventListener('click', closeIntro);
+$('btn-intro-replay').addEventListener('click', openIntro);
+
 /* ---------- 화면 이동 배선 ---------- */
 function stopTimers(){
   if (timerIv){ clearInterval(timerIv); timerIv = null; }
@@ -2903,6 +3037,7 @@ async function boot(){
     initFirebase();  // 저장 시점 지연 방지 위해 백그라운드로 미리 익명 인증 시작
     renderGallery();
     renderPublicGallery();
+    maybeAutoOpenIntro();
   }
 }
 boot();
